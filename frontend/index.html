@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-950">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>pRoxy — MITM Dashboard</title>
+  <link rel="icon" type="image/x-icon" href="/favicon/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png">
+  <link rel="manifest" href="/favicon/site.webmanifest">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            surface: { DEFAULT: '#111827', light: '#1f2937' },
+            accent: { DEFAULT: '#6366f1', hover: '#818cf8' },
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+    .tab-active { border-bottom: 2px solid #6366f1; color: #e5e7eb; }
+    .tab-inactive { border-bottom: 2px solid transparent; color: #9ca3af; }
+    .tab-inactive:hover { color: #d1d5db; }
+    .split-pane { display: flex; height: calc(100vh - 56px); }
+    .flow-list { overflow-y: auto; }
+    .flow-detail { overflow-y: auto; border-left: 1px solid #374151; }
+    .badge { padding: 1px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }
+    .badge-2xx { background: #065f46; color: #6ee7b7; }
+    .badge-3xx { background: #1e3a5f; color: #93c5fd; }
+    .badge-4xx { background: #78350f; color: #fcd34d; }
+    .badge-5xx { background: #7f1d1d; color: #fca5a5; }
+    .badge-pending { background: #374151; color: #9ca3af; }
+    .badge-ws { background: #4c1d95; color: #c4b5fd; }
+    .badge-doh { background: #164e63; color: #67e8f9; }
+    .badge-map { background: #134e4a; color: #5eead4; }
+    .toggle-switch { position: relative; width: 44px; height: 24px; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider { position: absolute; inset: 0; background: #374151; border-radius: 12px; cursor: pointer; transition: 0.2s; }
+    .toggle-slider::before { content: ''; position: absolute; height: 18px; width: 18px; left: 3px; bottom: 3px; background: #9ca3af; border-radius: 50%; transition: 0.2s; }
+    .toggle-switch input:checked + .toggle-slider { background: #6366f1; }
+    .toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); background: #fff; }
+    pre.body-preview { white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y: auto; }
+    .ctx-menu { position: fixed; z-index: 100; background: #1f2937; border: 1px solid #374151; border-radius: 6px; padding: 4px 0; min-width: 160px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+    .ctx-menu-item { padding: 6px 14px; cursor: pointer; font-size: 0.75rem; }
+    .ctx-menu-item:hover { background: #374151; }
+  </style>
+</head>
+<body class="h-full dark text-gray-300 font-mono text-sm">
+  <!-- Top nav -->
+  <nav class="flex items-center justify-between bg-gray-900 border-b border-gray-800 px-4 h-14">
+    <div class="flex items-center gap-3">
+      <img src="/logo/logo.png" alt="pRoxy" class="h-8 w-8 rounded">
+      <span class="text-lg font-bold text-white tracking-tight">pRoxy</span>
+      <span class="text-xs text-gray-500">MITM Dashboard</span>
+    </div>
+    <div class="flex gap-1" id="tab-bar">
+      <button class="px-3 py-2 text-sm tab-active" data-tab="traffic">Traffic</button>
+      <button class="px-3 py-2 text-sm tab-inactive" data-tab="replay">Replay</button>
+      <button class="px-3 py-2 text-sm tab-inactive" data-tab="rules">Rules</button>
+      <button class="px-3 py-2 text-sm tab-inactive" data-tab="dns">DNS</button>
+      <button class="px-3 py-2 text-sm tab-inactive" data-tab="intercept">Intercept</button>
+      <button class="px-3 py-2 text-sm tab-inactive" data-tab="cert">Cert</button>
+      <button class="px-3 py-2 text-sm tab-inactive" data-tab="tools">Tools</button>
+    </div>
+    <div class="flex items-center gap-2">
+      <span id="ws-status" class="w-2 h-2 rounded-full bg-red-500" title="Disconnected"></span>
+      <span class="text-xs text-gray-500" id="flow-count">0 flows</span>
+    </div>
+  </nav>
+
+  <!-- Tab content -->
+  <main id="tab-content" class="bg-gray-950"></main>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="fixed bottom-4 right-4 flex flex-col gap-2 z-50"></div>
+
+  <!-- Context menu (hidden) -->
+  <div id="ctx-menu" class="ctx-menu hidden"></div>
+
+  <script src="/components/toast.js"></script>
+  <script src="/components/flow_row.js"></script>
+  <script src="/components/flow_detail.js"></script>
+  <script src="/tabs/traffic.js"></script>
+  <script src="/tabs/replay.js"></script>
+  <script src="/tabs/rules.js"></script>
+  <script src="/tabs/dns.js"></script>
+  <script src="/tabs/intercept.js"></script>
+  <script src="/tabs/cert.js"></script>
+  <script src="/tabs/tools.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
