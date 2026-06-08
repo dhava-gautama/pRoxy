@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Advanced Tab Debug</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white p-4">
+  <h1>Advanced Tab Debug</h1>
+
+  <div id="debug-output" class="bg-gray-800 p-4 rounded mt-4"></div>
+
+  <script>
+    // Simple test of AdvancedTab object
+    window.Toast = {
+      show(message, type = 'info', duration = 3000) {
+        console.log(`Toast: ${message} (${type})`);
+        document.getElementById('debug-output').innerHTML += `<div>Toast: ${message} (${type})</div>`;
+      }
+    };
+
+    window.authFetch = function(url, options = {}) {
+      console.log(`authFetch: ${url}`);
+      document.getElementById('debug-output').innerHTML += `<div>authFetch: ${url}</div>`;
+      return Promise.resolve({
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({})
+      });
+    };
+
+    // Test AdvancedTab
+    window.AdvancedTab = {
+      render() {
+        return '<div>Advanced Tab Content</div>';
+      },
+
+      async load() {
+        document.getElementById('debug-output').innerHTML += '<div>AdvancedTab.load() called</div>';
+        try {
+          console.log('Testing API calls...');
+          await this.loadProtocolConfig();
+        } catch (e) {
+          console.error('Error in load:', e);
+          document.getElementById('debug-output').innerHTML += `<div>Error: ${e.message}</div>`;
+        }
+      },
+
+      async loadProtocolConfig() {
+        try {
+          document.getElementById('debug-output').innerHTML += '<div>loadProtocolConfig() called</div>';
+          const resp = await authFetch('/api/proxy/protocols');
+          document.getElementById('debug-output').innerHTML += '<div>API call completed</div>';
+        } catch (e) {
+          document.getElementById('debug-output').innerHTML += `<div>API Error: ${e.message}</div>`;
+          throw e;
+        }
+      }
+    };
+
+    // Test the tab
+    document.getElementById('debug-output').innerHTML = '<div>Starting test...</div>';
+
+    // Test render
+    try {
+      const content = AdvancedTab.render();
+      document.getElementById('debug-output').innerHTML += `<div>Render successful: ${content.substring(0, 50)}...</div>`;
+    } catch (e) {
+      document.getElementById('debug-output').innerHTML += `<div>Render error: ${e.message}</div>`;
+    }
+
+    // Test load
+    setTimeout(() => {
+      AdvancedTab.load();
+    }, 1000);
+  </script>
+</body>
+</html>

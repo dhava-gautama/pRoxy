@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Clear Flows</title>
+    <style>
+        body { font-family: monospace; background: #1a1a1a; color: #e0e0e0; padding: 20px; }
+        button { padding: 10px; margin: 5px; background: #333; color: white; border: 1px solid #666; }
+        pre { background: #2a2a2a; padding: 10px; border: 1px solid #666; white-space: pre-wrap; }
+        .error { color: #ff6b6b; }
+        .success { color: #4ecdc4; }
+    </style>
+</head>
+<body>
+    <h1>Debug Clear Flows Issue</h1>
+    <button onclick="testClear()">Test Clear Flows</button>
+    <button onclick="clearLog()">Clear Log</button>
+
+    <pre id="log"></pre>
+
+    <script>
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : '';
+            logEl.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        // Copy authFetch from utils.js
+        function getAuthKey() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('key') || '';
+        }
+
+        function authFetch(url, options = {}) {
+            const key = getAuthKey();
+            if (!key) {
+                return fetch(url, options);
+            }
+            const separator = url.includes('?') ? '&' : '?';
+            const authUrl = `${url}${separator}key=${encodeURIComponent(key)}`;
+            return fetch(authUrl, options);
+        }
+
+        async function testClear() {
+            try {
+                log('Starting clear flows test...');
+
+                const response = await authFetch('/api/flows', {
+                    method: 'DELETE',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                log(`Response status: ${response.status} ${response.statusText}`);
+                log(`Response ok: ${response.ok}`);
+                log(`Response headers: ${JSON.stringify(Object.fromEntries(response.headers.entries()))}`);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    log(`Error response body: ${errorText}`, 'error');
+                    throw new Error(`Clear failed with status: ${response.status} ${response.statusText}. ${errorText}`);
+                }
+
+                const responseText = await response.text();
+                log(`Raw response: '${responseText}'`);
+
+                if (!responseText.trim()) {
+                    log('Empty response from server', 'error');
+                    throw new Error('Empty response from server');
+                }
+
+                let result;
+                try {
+                    result = JSON.parse(responseText);
+                    log(`Parsed result: ${JSON.stringify(result)}`, 'success');
+                } catch (parseError) {
+                    log(`JSON parse error: ${parseError.message}`, 'error');
+                    throw new Error(`Failed to parse response: ${parseError.message}`);
+                }
+
+                if (typeof result !== 'object' || result === null) {
+                    log('Invalid response format', 'error');
+                    throw new Error('Invalid response format');
+                }
+
+                if (!('deleted' in result)) {
+                    log('Response missing "deleted" field', 'error');
+                }
+
+                const deletedCount = result.deleted || 0;
+                log(`✅ Success: Cleared ${deletedCount} flows`, 'success');
+
+            } catch (e) {
+                log(`❌ Error: ${e.message}`, 'error');
+                log(`Error type: ${e.name}`);
+                log(`Error stack: ${e.stack}`);
+            }
+        }
+
+        // Test on load
+        window.addEventListener('load', () => {
+            log('Debug page loaded');
+        });
+    </script>
+</body>
+</html>
