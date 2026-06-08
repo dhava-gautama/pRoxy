@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-gray-950">
+<html lang="en" class="h-full bg-gray-950 dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,6 +10,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png">
   <link rel="manifest" href="/favicon/site.webmanifest">
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui.css">
   <script>
     tailwind.config = {
       darkMode: 'class',
@@ -42,6 +43,7 @@
     .badge-ws { background: #4c1d95; color: #c4b5fd; }
     .badge-doh { background: #164e63; color: #67e8f9; }
     .badge-map { background: #134e4a; color: #5eead4; }
+    .badge-dns { background: #7c2d12; color: #fb923c; }
     .toggle-switch { position: relative; width: 44px; height: 24px; }
     .toggle-switch input { opacity: 0; width: 0; height: 0; }
     .toggle-slider { position: absolute; inset: 0; background: #374151; border-radius: 12px; cursor: pointer; transition: 0.2s; }
@@ -52,6 +54,28 @@
     .ctx-menu { position: fixed; z-index: 100; background: #1f2937; border: 1px solid #374151; border-radius: 6px; padding: 4px 0; min-width: 160px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
     .ctx-menu-item { padding: 6px 14px; cursor: pointer; font-size: 0.75rem; }
     .ctx-menu-item:hover { background: #374151; }
+    /* Virtual scroll */
+    .virtual-scroll-container { position: relative; overflow-y: auto; }
+    .virtual-scroll-spacer { pointer-events: none; }
+    .virtual-scroll-content { position: absolute; left: 0; right: 0; }
+    /* Sort headers */
+    .sort-header { cursor: pointer; user-select: none; }
+    .sort-header:hover { color: #e5e7eb; }
+    .sort-asc::after { content: ' ▲'; font-size: 0.6rem; }
+    .sort-desc::after { content: ' ▼'; font-size: 0.6rem; }
+    /* Diff */
+    .diff-added { background: rgba(34, 197, 94, 0.15); }
+    .diff-removed { background: rgba(239, 68, 68, 0.15); }
+    /* Light theme overrides */
+    .light .flow-detail { border-left-color: #d1d5db; }
+    .light .ctx-menu { background: #f9fafb; border-color: #d1d5db; }
+    .light .ctx-menu-item:hover { background: #e5e7eb; }
+    .light ::-webkit-scrollbar-thumb { background: #9ca3af; }
+    /* Keyboard shortcut hints */
+    kbd { display: inline-block; padding: 1px 5px; font-size: 0.65rem; background: #374151; border: 1px solid #4b5563; border-radius: 3px; color: #9ca3af; }
+    .off-sub-btn { display: block; width: 100%; text-align: left; padding: 4px 12px; font-size: 0.7rem; color: #9ca3af; border: none; background: none; cursor: pointer; }
+    .off-sub-btn:hover { background: #1f2937; color: #e5e7eb; }
+    .off-sub-btn.active { background: #1f2937; color: #818cf8; border-left: 2px solid #6366f1; }
   </style>
 </head>
 <body class="h-full dark text-gray-300 font-mono text-sm">
@@ -68,10 +92,22 @@
       <button class="px-3 py-2 text-sm tab-inactive" data-tab="rules">Rules</button>
       <button class="px-3 py-2 text-sm tab-inactive" data-tab="dns">DNS</button>
       <button class="px-3 py-2 text-sm tab-inactive" data-tab="intercept">Intercept</button>
+      <button class="px-3 py-2 text-sm tab-inactive" data-tab="analytics">Analytics</button>
       <button class="px-3 py-2 text-sm tab-inactive" data-tab="cert">Cert</button>
+      <button class="px-3 py-2 text-sm tab-inactive" data-tab="advanced">Advanced</button>
+      <button class="px-3 py-2 text-sm tab-inactive" data-tab="wireguard">WireGuard</button>
+      <button class="px-3 py-2 text-sm tab-inactive" data-tab="offensive">Offensive</button>
       <button class="px-3 py-2 text-sm tab-inactive" data-tab="tools">Tools</button>
+      <button class="px-3 py-2 text-sm tab-inactive" data-tab="openapi">OpenAPI</button>
+      <button class="px-3 py-2 text-sm tab-inactive" data-tab="issues">Issues</button>
+      <button class="px-3 py-2 text-sm tab-inactive" data-tab="authz">AuthZ</button>
+      <button class="px-3 py-2 text-sm tab-inactive" data-tab="import">Import</button>
+      <button class="px-3 py-2 text-sm tab-inactive" data-tab="sessions">Sessions</button>
     </div>
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-3">
+      <button onclick="ThemeManager.toggle()" id="theme-toggle" class="text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-gray-800" title="Toggle theme">
+        <span id="theme-icon">🌙</span>
+      </button>
       <span id="ws-status" class="w-2 h-2 rounded-full bg-red-500" title="Disconnected"></span>
       <span class="text-xs text-gray-500" id="flow-count">0 flows</span>
     </div>
@@ -86,7 +122,27 @@
   <!-- Context menu (hidden) -->
   <div id="ctx-menu" class="ctx-menu hidden"></div>
 
+  <!-- Keyboard shortcuts help (hidden) -->
+  <div id="shortcuts-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50" onclick="this.classList.add('hidden')">
+    <div class="bg-gray-900 border border-gray-700 rounded-lg p-6 max-w-md" onclick="event.stopPropagation()">
+      <h2 class="text-white font-bold mb-4">Keyboard Shortcuts</h2>
+      <div class="space-y-2 text-xs text-gray-300">
+        <div class="flex justify-between"><span>Switch tabs</span><span><kbd>1</kbd>-<kbd>9</kbd></span></div>
+        <div class="flex justify-between"><span>Focus search</span><span><kbd>Ctrl+F</kbd></span></div>
+        <div class="flex justify-between"><span>Replay selected flow</span><span><kbd>Ctrl+R</kbd></span></div>
+        <div class="flex justify-between"><span>Copy cURL</span><span><kbd>Ctrl+Shift+C</kbd></span></div>
+        <div class="flex justify-between"><span>Navigate flows</span><span><kbd>↑</kbd> <kbd>↓</kbd></span></div>
+        <div class="flex justify-between"><span>Delete selected flow</span><span><kbd>Del</kbd></span></div>
+        <div class="flex justify-between"><span>Toggle compare mode</span><span><kbd>Ctrl+D</kbd></span></div>
+        <div class="flex justify-between"><span>Show shortcuts</span><span><kbd>?</kbd></span></div>
+      </div>
+      <button onclick="document.getElementById('shortcuts-modal').classList.add('hidden')" class="mt-4 text-xs text-gray-400 hover:text-white">Close</button>
+    </div>
+  </div>
+
+  <script src="/utils.js"></script>
   <script src="/components/toast.js"></script>
+  <script src="/components/theme_manager.js"></script>
   <script src="/components/flow_row.js"></script>
   <script src="/components/flow_detail.js"></script>
   <script src="/tabs/traffic.js"></script>
@@ -94,8 +150,18 @@
   <script src="/tabs/rules.js"></script>
   <script src="/tabs/dns.js"></script>
   <script src="/tabs/intercept.js"></script>
+  <script src="/tabs/analytics.js"></script>
   <script src="/tabs/cert.js"></script>
+  <script src="/tabs/advanced.js"></script>
+  <script src="/tabs/wireguard.js"></script>
+  <script src="/tabs/offensive.js"></script>
   <script src="/tabs/tools.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"></script>
+  <script src="/tabs/openapi.js"></script>
+  <script src="/tabs/issues.js"></script>
+  <script src="/tabs/authz.js"></script>
+  <script src="/tabs/importer.js"></script>
+  <script src="/tabs/sessions.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

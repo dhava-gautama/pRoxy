@@ -113,7 +113,8 @@ window.DNSTab = {
 
   async load() {
     try {
-      const resp = await fetch('/api/dns');
+      const resp = await authFetch('/api/dns');
+      if (!resp.ok) { Toast.show('Failed to load DNS settings', 'error'); return; }
       this.dns = await resp.json();
       document.getElementById('dns-loading').classList.add('hidden');
       document.getElementById('dns-content').classList.remove('hidden');
@@ -129,7 +130,7 @@ window.DNSTab = {
 
   async save(patch) {
     try {
-      const resp = await fetch('/api/dns', {
+      const resp = await authFetch('/api/dns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch)
@@ -173,7 +174,7 @@ window.DNSTab = {
       ? '<div class="text-gray-600 text-xs">No blocked domains</div>'
       : list.map((d, i) => `
         <div class="flex items-center justify-between bg-gray-800 rounded px-3 py-1.5 text-xs">
-          <span class="text-red-400">${d}</span>
+          <span class="text-red-400">${esc(d)}</span>
           <button onclick="DNSTab.removeBlock(${i})" class="text-red-400 hover:text-red-300">✕</button>
         </div>
       `).join('');
@@ -204,9 +205,9 @@ window.DNSTab = {
             <input type="checkbox" ${m.enabled ? 'checked' : ''} onchange="DNSTab.toggleMapping(${i}, this.checked)">
             <span class="toggle-slider" style="border-radius:10px"></span>
           </label>
-          <span class="text-indigo-400">${m.hostname}</span>
+          <span class="text-indigo-400">${esc(m.hostname)}</span>
           <span class="text-gray-500">→</span>
-          <span class="text-green-400">${m.ip}</span>
+          <span class="text-green-400">${esc(m.ip)}</span>
           <button onclick="DNSTab.removeMapping(${i})" class="ml-auto text-red-400 hover:text-red-300">✕</button>
         </div>
       `).join('');

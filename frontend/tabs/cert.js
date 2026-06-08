@@ -5,7 +5,7 @@ window.CertTab = {
 
   async loadCertInfo() {
     try {
-      const res = await fetch('/api/cert/info');
+      const res = await authFetch('/api/cert/info');
       if (res.ok) this._certInfo = await res.json();
       else this._certInfo = null;
     } catch { this._certInfo = null; }
@@ -22,7 +22,7 @@ window.CertTab = {
     this._loading = true;
     this._rerender();
     try {
-      const res = await fetch('/api/cert/regenerate', { method: 'POST' });
+      const res = await authFetch('/api/cert/regenerate', { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         this._certInfo = data.cert;
@@ -53,9 +53,9 @@ window.CertTab = {
     return `
       <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
         <span class="text-gray-500">SHA-256</span>
-        <span class="text-gray-300 font-mono text-xs break-all">${c.fingerprint}</span>
+        <span class="text-gray-300 font-mono text-xs break-all">${esc(c.fingerprint)}</span>
         <span class="text-gray-500">Subject</span>
-        <span class="text-gray-300 text-xs">${c.subject}</span>
+        <span class="text-gray-300 text-xs">${esc(c.subject)}</span>
         <span class="text-gray-500">Valid From</span>
         <span class="text-gray-300">${from}</span>
         <span class="text-gray-500">Valid Until</span>
