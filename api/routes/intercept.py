@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import Depends,  APIRouter, HTTPException
+
+from api.auth import get_current_user, AUTH_DISABLED
 from pydantic import BaseModel
 from typing import Optional
 
 from state.shared import ProxyState
 
-router = APIRouter(prefix="/api/intercept", tags=["intercept"])
+router = APIRouter(prefix="/api/intercept", tags=["intercept"],
+    dependencies=[Depends(get_current_user)] if not AUTH_DISABLED else []
+)
 state = ProxyState()
 
 

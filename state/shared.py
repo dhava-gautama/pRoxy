@@ -3,6 +3,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import logging
+import os
 import queue
 import re
 import threading
@@ -16,6 +17,8 @@ from state.models import (
     FlowRecord,
     InterceptedFlow,
     ProxySettings,
+    SavedCollection,
+    SavedSequence,
 )
 
 MAX_FLOWS = 10_000
@@ -52,17 +55,56 @@ class ProxyState:
         self._intercept_lock = threading.Lock()
         self._intercept_queue: OrderedDict[str, tuple[InterceptedFlow, threading.Event]] = OrderedDict()
 
-        # Persistence
-        self._persistence_dir = Path.home() / ".pRoxy"
+        # Collections
+        self._collections_lock = threading.Lock()
+        self._collections: dict[str, SavedCollection] = {}
+
+        # Persistence debouncing
+        self._persistence_timer: Optional[threading.Timer] = None
+        self._persistence_lock = threading.Lock()
+
+        # Sequences (macros)
+        self._sequences_lock = threading.Lock()
+        self._sequences: dict[str, SavedSequence] = {}
+
+        # WebSocket injection: (flow_id, to_client, content)
+        self.ws_inject_queue: queue.Queue[tuple[str, bool, str]] = queue.Queue()
+
+        # Recording sessions for replay system
+        self._recording_lock = threading.Lock()
+        self._recording_session: Optional[str] = None
+        self._recording_domains: list[str] = []
+        self._recorded_flows: list[str] = []
+
+        # Reference to proxy addon for WS flow access (set by addon)
+        self.proxy_addon = None
+
+        # Persistence. PROXY_STATE_DIR overrides the default (tests set it to a
+        # temp dir so the suite never writes to the user's real ~/.pRoxy).
+        self._persistence_dir = Path(os.environ.get("PROXY_STATE_DIR") or (Path.home() / ".pRoxy"))
         self._load_persisted()
 
     # ── Persistence ─────────────────────────────────────────
+
+    @staticmethod
+    def _atomic_write_text(path: Path, text: str) -> None:
+        """Write text to `path` atomically.
+
+        write_text() truncates then writes, so a crash mid-write leaves a
+        corrupt/empty JSON that _load_persisted then fails to parse. Writing to
+        a temp file in the same dir and os.replace()-ing it into place makes the
+        update atomic: readers see either the old file or the fully-written new
+        one, never a partial.
+        """
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(text)
+        os.replace(tmp, path)
 
     def _persist_settings(self) -> None:
         try:
             self._persistence_dir.mkdir(parents=True, exist_ok=True)
             path = self._persistence_dir / "settings.json"
-            path.write_text(self._settings.model_dump_json(indent=2))
+            self._atomic_write_text(path, self._settings.model_dump_json(indent=2))
         except Exception as e:
             _logger.warning("Failed to persist settings: %s", e)
 
@@ -70,9 +112,42 @@ class ProxyState:
         try:
             self._persistence_dir.mkdir(parents=True, exist_ok=True)
             path = self._persistence_dir / "dns.json"
-            path.write_text(self._dns.model_dump_json(indent=2))
+            self._atomic_write_text(path, self._dns.model_dump_json(indent=2))
         except Exception as e:
             _logger.warning("Failed to persist DNS: %s", e)
+
+    def _persist_sequences(self) -> None:
+        try:
+            self._persistence_dir.mkdir(parents=True, exist_ok=True)
+            path = self._persistence_dir / "sequences.json"
+            data = [s.model_dump() for s in self._sequences.values()]
+            self._atomic_write_text(path, json.dumps(data, indent=2))
+        except Exception as e:
+            _logger.warning("Failed to persist sequences: %s", e)
+
+    def _persist_collections(self) -> None:
+        try:
+            self._persistence_dir.mkdir(parents=True, exist_ok=True)
+            path = self._persistence_dir / "collections.json"
+            data = [c.model_dump() for c in self._collections.values()]
+            self._atomic_write_text(path, json.dumps(data, indent=2))
+        except Exception as e:
+            _logger.warning("Failed to persist collections: %s", e)
+
+    def _debounced_persist(self) -> None:
+        """Schedule debounced persistence to reduce I/O overhead."""
+        with self._persistence_lock:
+            if self._persistence_timer:
+                self._persistence_timer.cancel()
+
+            def _do_persist():
+                self._persist_settings()
+                self._persist_dns()
+                self._persist_collections()
+                self._persist_sequences()
+
+            self._persistence_timer = threading.Timer(2.0, _do_persist)
+            self._persistence_timer.start()
 
     def _load_persisted(self) -> None:
         try:
@@ -91,6 +166,35 @@ class ProxyState:
                 _logger.info("Loaded persisted DNS from %s", path)
         except Exception as e:
             _logger.warning("Failed to load persisted DNS: %s", e)
+        try:
+            path = self._persistence_dir / "collections.json"
+            if path.exists():
+                data = json.loads(path.read_text())
+                # Parse fully into a temp dict first, then assign atomically: a
+                # bad entry aborts the load and leaves prior in-memory state
+                # untouched instead of leaving a silently partial dict.
+                parsed: dict[str, SavedCollection] = {}
+                for c in data:
+                    col = SavedCollection(**c)
+                    parsed[col.id] = col
+                self._collections = parsed
+                _logger.info("Loaded %d persisted collections", len(self._collections))
+        except Exception as e:
+            _logger.warning("Failed to load persisted collections: %s", e)
+        try:
+            path = self._persistence_dir / "sequences.json"
+            if path.exists():
+                data = json.loads(path.read_text())
+                # Parse fully into a temp dict first, then assign atomically (see
+                # collections above) so a bad entry doesn't partially load.
+                parsed_seq: dict[str, SavedSequence] = {}
+                for s in data:
+                    seq = SavedSequence(**s)
+                    parsed_seq[seq.id] = seq
+                self._sequences = parsed_seq
+                _logger.info("Loaded %d persisted sequences", len(self._sequences))
+        except Exception as e:
+            _logger.warning("Failed to load persisted sequences: %s", e)
 
     # ── Flow storage ──────────────────────────────────────────
 
@@ -109,6 +213,18 @@ class ProxyState:
             items = list(self._flows.values())
         items.reverse()
         return items[offset : offset + limit]
+
+    def get_flows_lite(self, limit: int = 200, offset: int = 0) -> list[dict]:
+        """Return flows without large body fields for faster list loading."""
+        with self._flows_lock:
+            items = list(self._flows.values())
+        items.reverse()
+        result = []
+        for f in items[offset : offset + limit]:
+            d = f.model_dump(exclude={"request_body", "response_body", "ws_messages"})
+            d["response_size"] = f.response_size or len(f.response_body)
+            result.append(d)
+        return result
 
     def delete_flow(self, flow_id: str) -> bool:
         with self._flows_lock:
@@ -137,6 +253,8 @@ class ProxyState:
                 searchable += f" {v}"
             for v in f.response_headers.values():
                 searchable += f" {v}"
+            for msg in f.ws_messages:
+                searchable += f" {msg.content}"
             if pattern:
                 if pattern.search(searchable):
                     results.append(f)
@@ -165,7 +283,7 @@ class ProxyState:
             data = self._settings.model_dump()
             data.update(patch)
             self._settings = ProxySettings(**data)
-            self._persist_settings()
+            self._debounced_persist()
             return self._settings.model_copy()
 
     # ── DNS ───────────────────────────────────────────────────
@@ -179,7 +297,7 @@ class ProxyState:
             data = self._dns.model_dump()
             data.update(patch)
             self._dns = DNSSettings(**data)
-            self._persist_dns()
+            self._debounced_persist()
             return self._dns.model_copy()
 
     # ── Intercept queue ───────────────────────────────────────
@@ -214,3 +332,93 @@ class ProxyState:
             if entry is None:
                 return None
             return entry[0]
+
+    # ── Collections ────────────────────────────────────────────
+
+    def get_collections(self) -> list[SavedCollection]:
+        with self._collections_lock:
+            return list(self._collections.values())
+
+    def get_collection(self, collection_id: str) -> Optional[SavedCollection]:
+        with self._collections_lock:
+            return self._collections.get(collection_id)
+
+    def save_collection(self, collection: SavedCollection) -> SavedCollection:
+        with self._collections_lock:
+            self._collections[collection.id] = collection
+            self._debounced_persist()
+            return collection
+
+    def delete_collection(self, collection_id: str) -> bool:
+        with self._collections_lock:
+            removed = self._collections.pop(collection_id, None) is not None
+            if removed:
+                self._debounced_persist()
+            return removed
+
+    # ── Sequences ──────────────────────────────────────────────
+
+    def get_sequences(self) -> list[SavedSequence]:
+        with self._sequences_lock:
+            return list(self._sequences.values())
+
+    def get_sequence(self, seq_id: str) -> Optional[SavedSequence]:
+        with self._sequences_lock:
+            return self._sequences.get(seq_id)
+
+    def save_sequence(self, seq: SavedSequence) -> SavedSequence:
+        with self._sequences_lock:
+            self._sequences[seq.id] = seq
+            self._debounced_persist()
+            return seq
+
+    def delete_sequence(self, seq_id: str) -> bool:
+        with self._sequences_lock:
+            removed = self._sequences.pop(seq_id, None) is not None
+            if removed:
+                self._debounced_persist()
+            return removed
+
+    # ── Recording Sessions ────────────────────────────────────
+
+    def set_recording_session(self, session_id: str, filter_domains: Optional[list[str]] = None) -> None:
+        """Start recording traffic to a session."""
+        with self._recording_lock:
+            self._recording_session = session_id
+            self._recording_domains = filter_domains or []
+            self._recorded_flows = []
+
+    def stop_recording_session(self, session_id: str) -> list[str]:
+        """Stop recording and return recorded flow IDs."""
+        with self._recording_lock:
+            if self._recording_session == session_id:
+                flows = self._recorded_flows.copy()
+                self._recording_session = None
+                self._recording_domains = []
+                self._recorded_flows = []
+                return flows
+            return []
+
+    def is_recording(self) -> bool:
+        """Check if currently recording."""
+        with self._recording_lock:
+            return self._recording_session is not None
+
+    def should_record_flow(self, host: str) -> bool:
+        """Check if flow should be recorded."""
+        with self._recording_lock:
+            if self._recording_session is None:
+                return False
+            if not self._recording_domains:  # Record all if no filter
+                return True
+            return host in self._recording_domains
+
+    def record_flow(self, flow_id: str, host: str) -> None:
+        """Record a flow if recording is active."""
+        with self._recording_lock:
+            if self._recording_session is None:
+                return
+            # Inline of should_record_flow(): _recording_lock is a non-reentrant
+            # Lock, so calling that method here would deadlock the proxy thread.
+            if not self._recording_domains or host in self._recording_domains:
+                self._recorded_flows.append(flow_id)

@@ -4,19 +4,31 @@ import json
 import time
 import urllib.parse
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from fastapi.responses import JSONResponse
 
-from state.models import FlowRecord, ReplayRequest
+from api.auth import get_current_user, AUTH_DISABLED
+from state.models import FlowRecord, WSMessage
 from state.shared import ProxyState
+from api.decoders import protobuf_decoder
 
-router = APIRouter(prefix="/api/flows", tags=["flows"])
+router = APIRouter(
+    prefix="/api/flows",
+    tags=["flows"],
+    dependencies=[Depends(get_current_user)] if not AUTH_DISABLED else []
+)
 state = ProxyState()
 
 
 @router.get("")
 def list_flows(limit: int = 200, offset: int = 0):
     return state.get_flows(limit=limit, offset=offset)
+
+
+@router.get("/lite")
+def list_flows_lite(limit: int = 500, offset: int = 0):
+    """Return flows without bodies for faster list loading."""
+    return state.get_flows_lite(limit=limit, offset=offset)
 
 
 @router.get("/search")
@@ -59,6 +71,16 @@ def export_har(limit: int = 5000):
             "cache": {},
             "timings": {"send": 0, "wait": f.duration_ms, "receive": 0},
         }
+        if f.flow_type == "websocket" and f.ws_messages:
+            entry["_webSocketMessages"] = [
+                {
+                    "time": msg.timestamp,
+                    "opcode": 1 if msg.is_text else 2,
+                    "data": msg.content,
+                    "type": "send" if msg.direction == "client" else "receive",
+                }
+                for msg in f.ws_messages
+            ]
         entries.append(entry)
 
     har = {
@@ -106,11 +128,49 @@ async def import_har(file: UploadFile = File(...)):
                 completed=resp.get("status", 0) > 0,
                 duration_ms=entry.get("time", 0),
             )
+            ws_msgs = entry.get("_webSocketMessages", [])
+            if ws_msgs:
+                flow.flow_type = "websocket"
+                flow.ws_messages = [
+                    WSMessage(
+                        direction="client" if m.get("type") == "send" else "server",
+                        content=m.get("data", ""),
+                        timestamp=m.get("time", 0),
+                        is_text=m.get("opcode", 1) == 1,
+                        size=len(m.get("data", "").encode("utf-8")),
+                    )
+                    for m in ws_msgs
+                ]
             state.store_flow(flow)
             imported += 1
         return {"imported": imported}
     except Exception as e:
         raise HTTPException(400, f"Invalid HAR file: {e}")
+
+
+@router.post("/{flow_id}/ws/send")
+async def ws_send_message(flow_id: str, data: dict):
+    """Inject a WebSocket message into an active connection."""
+    content = data.get("content", "")
+    to_client = data.get("to_client", False)
+    if not content:
+        raise HTTPException(400, "content is required")
+    addon = state.proxy_addon
+    if addon is None:
+        raise HTTPException(503, "Proxy addon not available")
+    ok = addon.inject_ws_message(flow_id, content, to_client)
+    if not ok:
+        raise HTTPException(404, "WebSocket connection not active")
+    return {"ok": True}
+
+
+@router.get("/{flow_id}/ws/active")
+def ws_check_active(flow_id: str):
+    """Check if a WebSocket connection is still active."""
+    addon = state.proxy_addon
+    if addon is None:
+        return {"active": False}
+    return {"active": flow_id in addon.get_active_ws_ids()}
 
 
 @router.get("/{flow_id}/curl")
@@ -137,6 +197,20 @@ def get_flow(flow_id: str):
     return flow
 
 
+@router.get("/{flow_id}/protobuf")
+def decode_flow_protobuf(flow_id: str):
+    """Decode protobuf content from a flow"""
+    flow = state.get_flow(flow_id)
+    if flow is None:
+        raise HTTPException(404, "Flow not found")
+
+    decoded = protobuf_decoder.decode_flow(flow)
+    if decoded is None:
+        raise HTTPException(400, "Flow does not contain decodable protobuf content")
+
+    return decoded
+
+
 @router.delete("/{flow_id}")
 def delete_flow(flow_id: str):
     if not state.delete_flow(flow_id):
@@ -146,5 +220,34 @@ def delete_flow(flow_id: str):
 
 @router.delete("")
 def clear_flows():
-    n = state.clear_flows()
-    return {"deleted": n}
+    import logging
+    from api.routes import ws
+    import asyncio
+    logger = logging.getLogger("pRoxy.flows")
+
+    try:
+        n = state.clear_flows()
+        logger.info(f"Successfully cleared {n} flows")
+
+        # Notify WebSocket clients about the clear operation
+        if ws.ws_clients:
+            clear_notification = {
+                "type": "flows_cleared",
+                "deleted": n,
+                "timestamp": time.time()
+            }
+            dead_clients = []
+            for client in list(ws.ws_clients):
+                try:
+                    client.put_nowait(clear_notification)
+                except:
+                    dead_clients.append(client)
+
+            # Clean up dead clients
+            for client in dead_clients:
+                ws.ws_clients.discard(client)
+
+        return {"deleted": n}
+    except Exception as e:
+        logger.error(f"Error clearing flows: {e}")
+        raise HTTPException(500, f"Failed to clear flows: {e}")

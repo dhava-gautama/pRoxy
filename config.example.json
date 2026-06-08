@@ -1,0 +1,84 @@
+{
+  "comment": "Example configuration file for pRoxy - copy to ~/.pRoxy/settings.json",
+  "settings": {
+    "hsts_strip": false,
+    "hpkp_strip": false,
+    "csp_strip": false,
+    "cors_bypass": false,
+    "force_ssl": false,
+    "custom_user_agent": "",
+    "intercept_enabled": false,
+    "intercept_responses": false,
+    "upstream_proxy": "",
+    "header_rules": [
+      {
+        "name": "X-Custom-Header",
+        "value": "example-value",
+        "phase": "request",
+        "action": "set",
+        "enabled": true
+      }
+    ],
+    "replace_rules": [
+      {
+        "pattern": "example.com",
+        "replacement": "test.com",
+        "phase": "request",
+        "is_regex": false,
+        "enabled": false
+      }
+    ],
+    "breakpoint_rules": [
+      {
+        "host_pattern": "*.api.example.com",
+        "path_pattern": "/auth/.*",
+        "method": "POST",
+        "enabled": false
+      }
+    ],
+    "scope_patterns": [
+      "*.example.com",
+      "api.test.com"
+    ],
+    "map_rules": [
+      {
+        "enabled": false,
+        "match_pattern": "*.js",
+        "is_regex": false,
+        "rule_type": "local",
+        "target": "static/modified.js"
+      }
+    ],
+    "mock_rules": [
+      {
+        "enabled": false,
+        "match_pattern": "*/api/status",
+        "is_regex": false,
+        "status_code": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"status\": \"ok\", \"mock\": true}"
+      }
+    ]
+  },
+  "dns": {
+    "doh_enabled": false,
+    "doh_url": "https://cloudflare-dns.com/dns-query",
+    "blocklist": [
+      "ads.example.com",
+      "tracker.example.com"
+    ],
+    "custom_mappings": [
+      {
+        "hostname": "api.example.com",
+        "ip": "127.0.0.1",
+        "enabled": false
+      }
+    ]
+  },
+  "environment": {
+    "PROXY_DISABLE_AUTH": "false",
+    "PROXY_LOG_LEVEL": "INFO"
+  }
+}

@@ -5,10 +5,12 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import flows, settings, dns, intercept, cert, ws, replay
+from api.auth import get_current_user, security, AUTH_DISABLED
+from api.routes import flows, settings, dns, intercept, cert, ws, replay, collections, stress, recon, scanner, tamper, auth_test, exploit, analytics, threat_detection, rules, proxy, tcp_proxy, content_processing, wireguard, ssl, proxy_manager, openapi, importer, sessions, issues, authz
 from state.shared import ProxyState
 
 logger = logging.getLogger("pRoxy.api")
@@ -61,18 +63,58 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="pRoxy", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(
+        title="pRoxy",
+        version="1.0.0",
+        description="Web-based MITM Proxy with Real-time Dashboard",
+        lifespan=lifespan
+    )
 
-    # API routes
+    # Add CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # In production, specify allowed origins
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # API routes (protected by global auth dependency)
     app.include_router(flows.router)
     app.include_router(settings.router)
     app.include_router(dns.router)
     app.include_router(intercept.router)
     app.include_router(cert.router)
     app.include_router(replay.router)
+    app.include_router(collections.router)
+    app.include_router(stress.router)
+    app.include_router(recon.router)
+    app.include_router(scanner.router)
+    app.include_router(tamper.router)
+    app.include_router(auth_test.router)
+    app.include_router(exploit.router)
+    app.include_router(analytics.router)
+    app.include_router(threat_detection.router)
+    app.include_router(rules.router)
+    app.include_router(proxy.router)
+    app.include_router(tcp_proxy.router)
+    app.include_router(content_processing.router)
+    app.include_router(wireguard.router)
+    app.include_router(ssl.router)
+    app.include_router(proxy_manager.router)
+    app.include_router(openapi.router)
+    app.include_router(importer.router)
+    app.include_router(sessions.router)
+    app.include_router(issues.router)
+    app.include_router(authz.router)
     app.include_router(ws.router)
 
-    # Serve frontend static files
+    # Serve frontend static files (authentication handled by query param)
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
+
+    if not AUTH_DISABLED:
+        print("[pRoxy.auth] Authentication enabled. Use ?key=YOUR_KEY in dashboard URL")
+    else:
+        print("[pRoxy.auth] Authentication disabled via PROXY_DISABLE_AUTH")
 
     return app

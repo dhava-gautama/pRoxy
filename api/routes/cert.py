@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
+
+from api.auth import create_auth_dependencies
 from fastapi.responses import FileResponse
 
 from proxy.ca import get_ca_cert_path, get_android_cert_path, get_ca_info, regenerate_ca
 
-router = APIRouter(tags=["cert"])
+router = APIRouter(tags=["cert"], dependencies=create_auth_dependencies())
 
 
 @router.get("/ca.pem")

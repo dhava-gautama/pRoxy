@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package grok.auth_frontend;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// Authentication frontend service for mobile/web clients
+service AuthFrontend {
+  // Get current user information
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+
+  // Authenticate user session
+  rpc Authenticate(AuthRequest) returns (AuthResponse);
+
+  // Refresh authentication token
+  rpc RefreshToken(RefreshTokenRequest) returns (AuthResponse);
+
+  // Logout user
+  rpc Logout(google.protobuf.Empty) returns (google.protobuf.Empty);
+}
+
+// Request for getting user info (typically empty for authenticated users)
+message GetUserRequest {
+  // Usually empty - user identified by session cookie/token
+}
+
+// User information response
+message GetUserResponse {
+  bool authenticated = 1;
+  User user = 2;
+  Session session = 3;
+  repeated string permissions = 4;
+}
+
+// User profile information
+message User {
+  string user_id = 1;
+  string username = 2;
+  string email = 3;
+  string display_name = 4;
+  string avatar_url = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp last_login = 7;
+  UserPreferences preferences = 8;
+  bool email_verified = 9;
+  bool is_premium = 10;
+}
+
+// User preferences and settings
+message UserPreferences {
+  string language = 1;
+  string timezone = 2;
+  bool dark_mode = 3;
+  bool notifications_enabled = 4;
+  map<string, string> custom_settings = 5;
+}
+
+// Session information
+message Session {
+  string session_id = 1;
+  google.protobuf.Timestamp expires_at = 2;
+  string device_id = 3;
+  string user_agent = 4;
+  string ip_address = 5;
+  bool is_mobile = 6;
+}
+
+// Authentication request
+message AuthRequest {
+  oneof auth_method {
+    UsernamePasswordAuth username_password = 1;
+    TokenAuth token = 2;
+    OAuthAuth oauth = 3;
+  }
+  string device_id = 4;
+  string user_agent = 5;
+}
+
+// Username/password authentication
+message UsernamePasswordAuth {
+  string username = 1;
+  string password = 2;
+  bool remember_me = 3;
+}
+
+// Token-based authentication
+message TokenAuth {
+  string access_token = 1;
+  string refresh_token = 2;
+}
+
+// OAuth authentication
+message OAuthAuth {
+  string provider = 1;
+  string authorization_code = 2;
+  string redirect_uri = 3;
+}
+
+// Authentication response
+message AuthResponse {
+  bool success = 1;
+  string access_token = 2;
+  string refresh_token = 3;
+  google.protobuf.Timestamp expires_at = 4;
+  User user = 5;
+  string error_message = 6;
+  int32 error_code = 7;
+}
+
+// Refresh token request
+message RefreshTokenRequest {
+  string refresh_token = 1;
+  string device_id = 2;
+}

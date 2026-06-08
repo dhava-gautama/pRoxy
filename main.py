@@ -10,7 +10,8 @@ import time
 import uvicorn
 
 from api.server import create_app
-from proxy.engine import start_proxy_thread
+from proxy.ca import ensure_ca
+from proxy.engine import start_proxy_thread, start_dual_mode_proxy
 
 
 def is_port_free(host: str, port: int) -> bool:
@@ -40,20 +41,37 @@ def main() -> None:
 
     host = "0.0.0.0"
 
+    # Default port assignments: 8080=proxy, 8082=dashboard, 51820=WireGuard
     proxy_port = find_free_port(host, 8080)
-    api_port = find_free_port(host, 8081 if proxy_port == 8080 else proxy_port + 1)
+    wireguard_port = find_free_port(host, 51820)
+    api_port = find_free_port(host, 8082)
+
+    # Ensure all ports are different from each other
+    if wireguard_port == proxy_port:
+        wireguard_port = find_free_port(host, wireguard_port + 1)
+    if api_port == proxy_port:
+        api_port = find_free_port(host, max(8082, proxy_port + 1))
+    if api_port == wireguard_port:
+        api_port = find_free_port(host, max(8082, wireguard_port + 1))
 
     if proxy_port != 8080:
-        logger.warning("Port 8080 in use, proxy using :%d", proxy_port)
-    if api_port != 8081:
-        logger.warning("Port 8081 in use, dashboard using :%d", api_port)
+        logger.info("Port 8080 in use, proxy using :%d", proxy_port)
+    if wireguard_port != 51820:
+        logger.info("Port 51820 in use, WireGuard using :%d", wireguard_port)
+    if api_port != 8082:
+        logger.info("Port 8082 in use, dashboard using :%d", api_port)
 
-    logger.info("Starting pRoxy...")
-    logger.info("  Proxy:     %s:%d", host, proxy_port)
-    logger.info("  Dashboard: http://%s:%d", host, api_port)
+    # Generate the CA once up front so both proxy instances load the same one
+    # (concurrent instances would otherwise race to create it on first run).
+    ensure_ca()
 
-    # Start mitmproxy in a daemon thread
-    start_proxy_thread(listen_host=host, listen_port=proxy_port)
+    logger.info("Starting pRoxy with DUAL mitmproxy instances...")
+    logger.info("  HTTP Proxy:  %s:%d (browsers, proxy-aware apps)", host, proxy_port)
+    logger.info("  WireGuard:   %s:%d (ALL device traffic via VPN)", host, wireguard_port)
+    logger.info("  Dashboard:   http://%s:%d", host, api_port)
+
+    # Start both proxy instances simultaneously
+    regular_thread, wireguard_thread = start_dual_mode_proxy(proxy_port, wireguard_port)
 
     # Give proxy a moment to initialize its event loop
     time.sleep(1)

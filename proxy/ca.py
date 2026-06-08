@@ -69,7 +69,8 @@ def get_android_cert_path() -> tuple[Path, str] | None:
             pem_content = pem_path.read_text()
             # Android format: readable text + PEM block
             out_path.write_text(text_result.stdout + pem_content)
-        except Exception:
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, OSError, IOError) as e:
+            logger.warning("Failed to generate Android cert format: %s", e)
             return None
 
     return out_path, filename
@@ -97,6 +98,26 @@ def get_ca_info() -> dict | None:
     }
 
 
+def ensure_ca() -> bool:
+    """Ensure the mitmproxy CA exists on disk, generating it once if missing.
+
+    Call this before spawning proxy instances so concurrent instances all load
+    the same CA instead of racing to create (and clobber) it on first run.
+    """
+    if get_ca_cert_path("pem") is not None:
+        return True
+
+    ca_dir = get_ca_dir()
+    try:
+        from mitmproxy.certs import CertStore
+        CertStore.from_store(str(ca_dir), "mitmproxy", key_size=2048)
+        logger.info("Generated CA certificates in %s", ca_dir)
+        return True
+    except (ImportError, OSError, ValueError) as e:
+        logger.error("Failed to generate CA certificates: %s", e)
+        return False
+
+
 def regenerate_ca() -> bool:
     """Delete existing CA files and trigger fresh generation via mitmproxy."""
     ca_dir = get_ca_dir()
@@ -117,6 +138,6 @@ def regenerate_ca() -> bool:
         CertStore.from_store(str(ca_dir), "mitmproxy", key_size=2048)
         logger.info("Regenerated CA certificates in %s", ca_dir)
         return True
-    except Exception:
-        logger.exception("Failed to regenerate CA certificates")
+    except (ImportError, OSError, ValueError) as e:
+        logger.error("Failed to regenerate CA certificates: %s", e)
         return False
