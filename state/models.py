@@ -309,15 +309,18 @@ class ProxySettings(BaseModel):
     enable_request_prioritization: bool = True  # Enable request priority queuing
     background_processing_interval: float = 0.1 # Background processing interval in seconds
 
-    # Performance monitoring and optimization settings
-    enable_performance_monitoring: bool = True  # Enable system performance monitoring
+    # Performance monitoring and optimization settings.
+    # Default OFF: the monitoring/optimization background threads burn CPU and
+    # starve mitmproxy's asyncio event loop, which made HTTPS proxying flaky and
+    # spammed "high CPU" warnings. Opt in only if you need the metrics.
+    enable_performance_monitoring: bool = False  # Enable system performance monitoring
     performance_sample_interval: float = 5.0   # Performance sampling interval in seconds
     performance_history_size: int = 1000       # Max performance samples to keep
     enable_resource_alerts: bool = True        # Enable resource usage alerts
     memory_warning_threshold: float = 80.0     # Memory usage warning threshold (%)
-    cpu_warning_threshold: float = 80.0        # CPU usage warning threshold (%)
+    cpu_warning_threshold: float = 90.0        # CPU usage warning threshold (%)
     disk_warning_threshold: float = 90.0       # Disk usage warning threshold (%)
-    enable_performance_optimization: bool = True # Enable automatic performance optimizations
+    enable_performance_optimization: bool = False # Enable automatic performance optimizations
     gc_threshold_mb: float = 100.0             # Trigger garbage collection above this memory usage (MB)
 
     # Enhanced Flow API settings
