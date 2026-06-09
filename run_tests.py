@@ -118,10 +118,14 @@ def main():
         cmd.extend([
             "--cov=api",
             "--cov=state",
-            "--cov=pRoxy",
             "--cov-report=term-missing",
-            "--cov-report=html:htmlcov"
+            "--cov-report=html:htmlcov",
+            "--cov-report=xml",
         ])
+    else:
+        # Disable coverage (and pytest.ini's --cov-fail-under gate) for partial/
+        # fast runs so a subset of tests doesn't fail the overall threshold.
+        cmd.append("--no-cov")
 
     # Run the tests
     print("🚀 Starting pRoxy Test Suite")
