@@ -118,13 +118,13 @@ async def import_har(file: UploadFile = File(...)):
                 path=parsed.path + ("?" + parsed.query if parsed.query else ""),
                 url=url,
                 request_headers={h["name"]: h["value"] for h in req.get("headers", [])},
-                request_body=(req.get("postData") or {}).get("text", ""),
-                request_content_type=(req.get("postData") or {}).get("mimeType", ""),
+                request_body=(req.get("postData") or {}).get("text") or "",
+                request_content_type=(req.get("postData") or {}).get("mimeType") or "",
                 status_code=resp.get("status", 0),
                 reason=resp.get("statusText", ""),
                 response_headers={h["name"]: h["value"] for h in resp.get("headers", [])},
-                response_body=(resp.get("content") or {}).get("text", ""),
-                response_content_type=(resp.get("content") or {}).get("mimeType", ""),
+                response_body=(resp.get("content") or {}).get("text") or "",
+                response_content_type=(resp.get("content") or {}).get("mimeType") or "",
                 completed=resp.get("status", 0) > 0,
                 duration_ms=entry.get("time", 0),
             )
@@ -240,7 +240,7 @@ def clear_flows():
             for client in list(ws.ws_clients):
                 try:
                     client.put_nowait(clear_notification)
-                except:
+                except Exception:
                     dead_clients.append(client)
 
             # Clean up dead clients

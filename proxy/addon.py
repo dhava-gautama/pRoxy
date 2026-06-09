@@ -1638,7 +1638,7 @@ class ProxyAddon:
             if hasattr(flow, 'modified'):
                 try:
                     lifecycle.is_modified = flow.modified()
-                except:
+                except Exception:
                     lifecycle.is_modified = False
 
             # Calculate durations
@@ -1991,7 +1991,7 @@ class ProxyAddon:
                 try:
                     priority, task_id, task = self._async_task_queue.get(timeout=1.0)
                     self._process_async_task(task)
-                except:
+                except Exception:
                     # Timeout or queue empty, continue
                     pass
 

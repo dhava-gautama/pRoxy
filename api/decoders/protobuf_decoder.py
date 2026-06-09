@@ -226,7 +226,7 @@ class ProtobufDecoder:
                                     "wire_type": "length-delimited",
                                     "field_number": field_number
                                 }
-                        except:
+                        except Exception:
                             fields[field_name] = {
                                 "value": value_bytes.hex(),
                                 "type": "bytes",

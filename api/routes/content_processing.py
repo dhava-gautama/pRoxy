@@ -333,7 +333,7 @@ def _detect_formats(content: str, content_type: str) -> List[str]:
         json.loads(content)
         if 'json' not in formats:
             formats.append('json')
-    except:
+    except Exception:
         pass
 
     if '<html' in content.lower() and 'html' not in formats:
@@ -354,7 +354,7 @@ def _extract_json_data(content: str) -> dict:
             "size": len(str(data)),
             "depth": _calculate_json_depth(data)
         }
-    except:
+    except Exception:
         return {}
 
 
@@ -444,7 +444,7 @@ def _analyze_performance(content: str, content_type: str) -> List[str]:
             data = json.loads(content)
             if isinstance(data, dict) and len(data) > 100:
                 hints.append("Large JSON object - consider pagination")
-        except:
+        except Exception:
             pass
 
     if 'html' in content_type.lower():
@@ -465,13 +465,13 @@ def _apply_processor(content: str, processor: str, config: dict) -> str:
     if processor == "decode_gzip":
         try:
             return gzip.decompress(base64.b64decode(content)).decode('utf-8')
-        except:
+        except Exception:
             return content
 
     elif processor == "decode_base64":
         try:
             return base64.b64decode(content).decode('utf-8')
-        except:
+        except Exception:
             return content
 
     elif processor == "beautify_json":
@@ -479,14 +479,14 @@ def _apply_processor(content: str, processor: str, config: dict) -> str:
             data = json.loads(content)
             indent = config.get('indent', 2)
             return json.dumps(data, indent=indent, ensure_ascii=False)
-        except:
+        except Exception:
             return content
 
     elif processor == "minify_json":
         try:
             data = json.loads(content)
             return json.dumps(data, separators=(',', ':'))
-        except:
+        except Exception:
             return content
 
     elif processor == "extract_urls":

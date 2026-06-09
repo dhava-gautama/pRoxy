@@ -363,7 +363,7 @@ def quick_setup_ssl_bypass(
         for instance in instances_created:
             try:
                 stop_proxy_instance(instance.id)
-            except:
+            except Exception:
                 pass
 
         raise HTTPException(500, f"SSL bypass setup failed: {e}")
