@@ -1151,9 +1151,8 @@ class ProxyAddon:
                     timestamp=time.time()
                 )
 
-                # For now, return the first message (could be extended to return all)
-                if not messages:
-                    messages.append(grpc_message)
+                # Capture every parsed message in the stream
+                messages.append(grpc_message)
 
                 offset += 5 + message_length
 
@@ -2255,7 +2254,7 @@ class ProxyAddon:
         return {
             "queue_stats": self._queue_stats.dict(),
             "processing_stats": self._processing_stats,
-            "active_workers": self._processing_executor._threads if self._processing_executor else 0,
+            "active_workers": len(self._processing_executor._threads) if self._processing_executor else 0,
             "connection_pools": len(self._connection_pools)
         }
 

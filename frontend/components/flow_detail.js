@@ -12,10 +12,11 @@ window.FlowDetail = {
               const ts = m.timestamp ? new Date(m.timestamp * 1000).toLocaleTimeString('en-US', {hour12: false, hour:'2-digit', minute:'2-digit', second:'2-digit', fractionalSecondDigits: 3}) : '';
               const sizeStr = m.size ? formatBytes(m.size) : '';
               const isBinary = !m.is_text;
-              const preview = isBinary && m.content.startsWith('<binary')
-                ? m.content
-                : m.content.length > 200 ? m.content.substring(0, 200) + '...' : m.content;
-              const expandable = m.content.length > 200 || isBinary;
+              const c = m.content || '';
+              const preview = isBinary && c.startsWith('<binary')
+                ? c
+                : c.length > 200 ? c.substring(0, 200) + '...' : c;
+              const expandable = c.length > 200 || isBinary;
               return `
               <div class="flex gap-2 py-0.5 border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer" onclick="FlowDetail.toggleWSMsg(${i})">
                 <span class="text-gray-500 w-20 shrink-0 font-mono">${ts}</span>
@@ -26,9 +27,9 @@ window.FlowDetail = {
                 ${expandable ? '<span class="text-gray-600 shrink-0" id="ws-msg-expand-' + i + '">[+]</span>' : ''}
               </div>
               <div class="hidden bg-gray-950 rounded p-2 ml-28 mb-1" id="ws-msg-full-${i}">
-                ${isBinary && !m.content.startsWith('<binary')
-                  ? '<pre class="text-gray-400 font-mono text-xs">' + esc(hexDump(m.content)) + '</pre>'
-                  : '<pre class="text-gray-300 break-all whitespace-pre-wrap">' + esc(m.content) + '</pre>'}
+                ${isBinary && !c.startsWith('<binary')
+                  ? '<pre class="text-gray-400 font-mono text-xs">' + esc(hexDump(c)) + '</pre>'
+                  : '<pre class="text-gray-300 break-all whitespace-pre-wrap">' + esc(c) + '</pre>'}
               </div>`;
             }).join('')}
           </div>` : '<div class="text-gray-600 text-xs">No messages yet</div>';

@@ -161,12 +161,18 @@ window.OffensiveTab = {
     try {
       const domain = document.getElementById('sub-domain').value;
       const data = await this._get(`/api/recon/subdomains?domain=${encodeURIComponent(domain)}`);
+      this._results.subdomains = data.subdomains;
       el.innerHTML = `<div class="text-xs text-gray-400 mb-2">Found ${data.count} domains</div>
         <div class="bg-gray-900 rounded p-3 border border-gray-700 max-h-96 overflow-y-auto">
         ${data.subdomains.map(s => `<div class="text-xs text-gray-300 py-0.5 font-mono">${esc(s)}</div>`).join('')}
         </div>
-        <button onclick="copyToClipboard(${JSON.stringify(data.subdomains.join('\\n')).replace(/"/g,'&quot;')});Toast.show('Copied','success')" class="text-xs text-indigo-400 mt-2">Copy All</button>`;
+        <button onclick="OffensiveTab._copySubdomains()" class="text-xs text-indigo-400 mt-2">Copy All</button>`;
     } catch(e) { el.innerHTML = `<div class="text-xs text-red-400">${esc(e.message)}</div>`; }
+  },
+
+  _copySubdomains() {
+    copyToClipboard((this._results.subdomains || []).join('\n'));
+    Toast.show('Copied', 'success');
   },
 
   // ── Recon: Endpoint Discovery ────────────────────────────

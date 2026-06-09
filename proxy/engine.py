@@ -156,12 +156,52 @@ def _wait_until_listening(host: str, port: int, timeout: float = 10.0) -> bool:
     return False
 
 
+# Bind-retry tuning for the proxy daemon thread. A successful bind reaches
+# `await master.run()` and runs indefinitely, so a return/raise within
+# _FAST_FAIL_SECONDS means the master failed to bind during startup (e.g. a
+# transient "address already in use" race when launching dual instances) and is
+# worth retrying. A run that lasted longer was a real shutdown/crash — don't
+# tight-loop on it.
+_MAX_BIND_ATTEMPTS = 3
+_FAST_FAIL_SECONDS = 3.0
+_BIND_RETRY_BACKOFF = 0.75
+
+
 def _run_proxy(listen_host: str, listen_port: int, mode: str = "regular", target: str = None) -> None:
-    """Target for the proxy daemon thread — runs its own asyncio loop."""
-    try:
-        asyncio.run(_run_proxy_async(listen_host, listen_port, mode, target))
-    except Exception:
-        logger.exception("mitmproxy crashed")
+    """Target for the proxy daemon thread — runs its own asyncio loop.
+
+    Retries on fast startup/bind failures (up to `_MAX_BIND_ATTEMPTS`), since the
+    WireGuard UDP bind intermittently races with the regular instance on launch.
+    Retries happen inside this daemon thread, so the main thread is never blocked.
+    """
+    for attempt in range(1, _MAX_BIND_ATTEMPTS + 1):
+        started = time.monotonic()
+        try:
+            asyncio.run(_run_proxy_async(listen_host, listen_port, mode, target))
+            # A clean return means master.run() exited. If it ran long enough it
+            # was a real shutdown; only a fast exit indicates a bind failure.
+            elapsed = time.monotonic() - started
+        except Exception:
+            elapsed = time.monotonic() - started
+            if elapsed >= _FAST_FAIL_SECONDS or attempt >= _MAX_BIND_ATTEMPTS:
+                logger.exception("mitmproxy crashed (%s mode, %.2fs)", mode, elapsed)
+                return
+            logger.warning(
+                "mitmproxy %s mode failed to start on %s:%d in %.2fs (attempt %d/%d), retrying",
+                mode, listen_host, listen_port, elapsed, attempt, _MAX_BIND_ATTEMPTS,
+            )
+            time.sleep(_BIND_RETRY_BACKOFF)
+            continue
+
+        if elapsed >= _FAST_FAIL_SECONDS or attempt >= _MAX_BIND_ATTEMPTS:
+            # Ran for a while then exited normally — a genuine shutdown.
+            return
+        logger.warning(
+            "mitmproxy %s mode exited after %.2fs on %s:%d without binding "
+            "(attempt %d/%d), retrying",
+            mode, elapsed, listen_host, listen_port, attempt, _MAX_BIND_ATTEMPTS,
+        )
+        time.sleep(_BIND_RETRY_BACKOFF)
 
 
 def start_proxy_thread(listen_host: str = "0.0.0.0", listen_port: int = 8080,

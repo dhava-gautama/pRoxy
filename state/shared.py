@@ -101,35 +101,51 @@ class ProxyState:
         os.replace(tmp, path)
 
     def _persist_settings(self) -> None:
+        # Serialize under the lock so the snapshot is consistent with a
+        # concurrent update_settings() replacing self._settings.
+        with self._settings_lock:
+            text = self._settings.model_dump_json(indent=2)
         try:
             self._persistence_dir.mkdir(parents=True, exist_ok=True)
             path = self._persistence_dir / "settings.json"
-            self._atomic_write_text(path, self._settings.model_dump_json(indent=2))
+            self._atomic_write_text(path, text)
         except Exception as e:
             _logger.warning("Failed to persist settings: %s", e)
 
     def _persist_dns(self) -> None:
+        # Serialize under the lock so the snapshot is consistent with a
+        # concurrent update_dns() replacing self._dns.
+        with self._dns_lock:
+            text = self._dns.model_dump_json(indent=2)
         try:
             self._persistence_dir.mkdir(parents=True, exist_ok=True)
             path = self._persistence_dir / "dns.json"
-            self._atomic_write_text(path, self._dns.model_dump_json(indent=2))
+            self._atomic_write_text(path, text)
         except Exception as e:
             _logger.warning("Failed to persist DNS: %s", e)
 
     def _persist_sequences(self) -> None:
+        # Snapshot the dict's values while holding the lock so the debounced
+        # timer thread can't iterate while save/delete mutates the dict
+        # ("dictionary changed size during iteration"); write to disk outside.
+        with self._sequences_lock:
+            data = [s.model_dump() for s in self._sequences.values()]
         try:
             self._persistence_dir.mkdir(parents=True, exist_ok=True)
             path = self._persistence_dir / "sequences.json"
-            data = [s.model_dump() for s in self._sequences.values()]
             self._atomic_write_text(path, json.dumps(data, indent=2))
         except Exception as e:
             _logger.warning("Failed to persist sequences: %s", e)
 
     def _persist_collections(self) -> None:
+        # Snapshot the dict's values while holding the lock so the debounced
+        # timer thread can't iterate while save/delete mutates the dict
+        # ("dictionary changed size during iteration"); write to disk outside.
+        with self._collections_lock:
+            data = [c.model_dump() for c in self._collections.values()]
         try:
             self._persistence_dir.mkdir(parents=True, exist_ok=True)
             path = self._persistence_dir / "collections.json"
-            data = [c.model_dump() for c in self._collections.values()]
             self._atomic_write_text(path, json.dumps(data, indent=2))
         except Exception as e:
             _logger.warning("Failed to persist collections: %s", e)
@@ -209,10 +225,22 @@ class ProxyState:
             return self._flows.get(flow_id)
 
     def get_flows(self, limit: int = 200, offset: int = 0) -> list[FlowRecord]:
+        # Copy UNDER the lock so we don't race the mitmproxy thread, which appends
+        # to a stored record's mutable lists (ws_messages, grpc/sse/graphql) — also
+        # under _flows_lock. Only those lists are replaced (shallow copy shares the
+        # immutable body/header fields), so this stays cheap even at large limits.
         with self._flows_lock:
             items = list(self._flows.values())
-        items.reverse()
-        return items[offset : offset + limit]
+            items.reverse()
+            return [
+                f.model_copy(update={
+                    "ws_messages": list(f.ws_messages),
+                    "grpc_messages": list(f.grpc_messages),
+                    "sse_messages": list(f.sse_messages),
+                    "graphql_operations": list(f.graphql_operations),
+                })
+                for f in items[offset : offset + limit]
+            ]
 
     def get_flows_lite(self, limit: int = 200, offset: int = 0) -> list[dict]:
         """Return flows without large body fields for faster list loading."""
@@ -253,7 +281,10 @@ class ProxyState:
                 searchable += f" {v}"
             for v in f.response_headers.values():
                 searchable += f" {v}"
-            for msg in f.ws_messages:
+            # Snapshot the live list: the mitmproxy thread appends to ws_messages
+            # of active WebSocket flows, which would otherwise raise "list
+            # changed size during iteration" here.
+            for msg in list(f.ws_messages):
                 searchable += f" {msg.content}"
             if pattern:
                 if pattern.search(searchable):
