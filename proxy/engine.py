@@ -5,6 +5,7 @@ import logging
 import socket
 import threading
 import time
+from pathlib import Path
 from urllib.parse import urlparse
 
 from mitmproxy import options
@@ -14,6 +15,32 @@ from proxy.addon import ProxyAddon
 from state.shared import ProxyState
 
 logger = logging.getLogger("pRoxy.engine")
+
+# Drop a custom mitmproxy addon (*.py) here and it's auto-loaded at startup.
+SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
+
+
+def collect_custom_scripts(settings) -> list[str]:
+    """Return absolute paths of custom addon scripts to load.
+
+    Combines every *.py in SCRIPTS_DIR (excluding dunder files) with any explicit
+    paths in settings.custom_scripts, keeping only files that actually exist.
+    """
+    paths: list[str] = []
+    try:
+        if SCRIPTS_DIR.is_dir():
+            for p in sorted(SCRIPTS_DIR.glob("*.py")):
+                if not p.name.startswith("_"):
+                    paths.append(str(p.resolve()))
+    except OSError as e:
+        logger.warning("Could not scan scripts dir %s: %s", SCRIPTS_DIR, e)
+    for raw in getattr(settings, "custom_scripts", []) or []:
+        p = Path(raw).expanduser()
+        if p.is_file() and str(p.resolve()) not in paths:
+            paths.append(str(p.resolve()))
+        elif not p.is_file():
+            logger.warning("custom_scripts path not found, skipping: %s", raw)
+    return paths
 
 # ── SOCKS5 upstream support ────────────────────────────────────
 # mitmproxy doesn't natively chain through SOCKS5 upstream proxies.
@@ -136,6 +163,14 @@ async def _run_proxy_async(listen_host: str, listen_port: int, mode: str = "regu
 
     master.addons.add(ProxyAddon())
     logger.info("Enhanced proxy addon loaded with HTTP/2, WebSocket, and protocol support")
+
+    # Load user-supplied mitmproxy addon scripts via mitmproxy's ScriptLoader
+    # (full request/response/websocket hooks + hot-reload on file change).
+    custom_scripts = collect_custom_scripts(settings)
+    if custom_scripts:
+        master.options.update(scripts=custom_scripts)
+        logger.info("Loaded %d custom addon script(s): %s",
+                    len(custom_scripts), ", ".join(custom_scripts))
 
     logger.info("mitmproxy listening on %s:%d", listen_host, listen_port)
     await master.run()

@@ -82,6 +82,10 @@
         content.innerHTML = SessionsTab.render();
         SessionsTab.load();
         break;
+      case 'scripts':
+        content.innerHTML = ScriptsTab.render();
+        ScriptsTab.load();
+        break;
     }
   }
 

@@ -334,6 +334,10 @@ class ProxySettings(BaseModel):
     enable_connection_fingerprinting: bool = True # Enable client fingerprinting
     tls_vulnerability_scanning: bool = True     # Scan for TLS vulnerabilities
 
+    # Custom mitmproxy addon scripts (absolute paths) loaded in addition to any
+    # *.py dropped in the project's scripts/ directory. Applied at proxy startup.
+    custom_scripts: list[str] = []
+
 
 class DNSMapping(BaseModel):
     hostname: str

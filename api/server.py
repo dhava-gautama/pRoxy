@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.auth import get_current_user, security, AUTH_DISABLED
-from api.routes import flows, settings, dns, intercept, cert, ws, replay, collections, stress, recon, scanner, tamper, auth_test, exploit, analytics, threat_detection, rules, proxy, tcp_proxy, content_processing, wireguard, ssl, proxy_manager, openapi, importer, sessions, issues, authz
+from api.routes import flows, settings, dns, intercept, cert, ws, replay, collections, stress, recon, scanner, tamper, auth_test, exploit, analytics, threat_detection, rules, proxy, tcp_proxy, content_processing, wireguard, ssl, proxy_manager, openapi, importer, sessions, issues, authz, scripts
 from state.shared import ProxyState
 
 logger = logging.getLogger("pRoxy.api")
@@ -107,6 +107,7 @@ def create_app() -> FastAPI:
     app.include_router(sessions.router)
     app.include_router(issues.router)
     app.include_router(authz.router)
+    app.include_router(scripts.router)
     app.include_router(ws.router)
 
     # Serve frontend static files (authentication handled by query param)
