@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import ipaddress
 import os
+import socket
 import subprocess
 import time
 from pathlib import Path
@@ -70,15 +71,21 @@ _wg_config = WireGuardConfig()
 _wg_clients: Dict[str, WireGuardClient] = {}
 
 def _is_wireguard_running() -> bool:
-    """Check if a WireGuard interface actually exists on the system."""
+    """Check whether the mitmproxy WireGuard proxy is listening.
+
+    mitmproxy implements WireGuard in userspace, so there is no kernel `wg-prxy`
+    interface to find with `ip link` (the old check always returned False even
+    when the proxy was up). Instead, detect it by whether the UDP listen port is
+    already bound — if we can't bind it, the WireGuard proxy has it.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        result = subprocess.run(
-            ["ip", "link", "show", _wg_config.interface_name],
-            capture_output=True, check=False
-        )
-        return result.returncode == 0
-    except FileNotFoundError:
-        return False
+        s.bind(("0.0.0.0", _wg_config.listen_port))
+        return False  # port is free → not running
+    except OSError:
+        return True   # port already bound → the WireGuard proxy is up
+    finally:
+        s.close()
 
 
 @router.get("/config")
