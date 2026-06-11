@@ -507,8 +507,8 @@ window.FlowDetail = {
         // Update with enhanced decoding
         const serviceInfo = `
           <div class="mb-3 p-2 bg-indigo-900/20 border border-indigo-700 rounded text-xs">
-            <div class="text-indigo-300 font-bold">🚀 ${decoded.service}</div>
-            <div class="text-indigo-300">📡 ${decoded.method}</div>
+            <div class="text-indigo-300 font-bold">🚀 ${esc(decoded.service)}</div>
+            <div class="text-indigo-300">📡 ${esc(decoded.method)}</div>
           </div>
         `;
 

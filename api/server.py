@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import queue
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -24,19 +25,26 @@ async def _drain_traffic_queue(state: ProxyState) -> None:
     """Background task: pull FlowRecords from the thread-safe queue and fan out to WebSocket clients."""
     loop = asyncio.get_event_loop()
     while True:
+        # Keep model_dump() and fan-out INSIDE the try: an exception here used to
+        # propagate and kill the task permanently, silently stopping all live
+        # traffic streaming. queue.Empty is the normal idle timeout; anything else
+        # is logged and the loop continues. (CancelledError is BaseException, so
+        # `except Exception` lets lifespan shutdown cancel this cleanly.)
         try:
             record = await loop.run_in_executor(None, state.traffic_queue.get, True, 0.2)
-        except Exception:
+            data = record.model_dump()
+            dead: list[asyncio.Queue] = []
+            for q in list(ws.ws_clients):
+                try:
+                    q.put_nowait(data)
+                except asyncio.QueueFull:
+                    dead.append(q)
+            for q in dead:
+                ws.ws_clients.discard(q)
+        except queue.Empty:
             continue
-        data = record.model_dump()
-        dead: list[asyncio.Queue] = []
-        for q in list(ws.ws_clients):
-            try:
-                q.put_nowait(data)
-            except asyncio.QueueFull:
-                dead.append(q)
-        for q in dead:
-            ws.ws_clients.discard(q)
+        except Exception:
+            logger.exception("traffic drain loop error")
 
 
 @asynccontextmanager

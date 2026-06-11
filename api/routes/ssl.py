@@ -640,22 +640,21 @@ async def _adb_detect_apps(device_ip: Optional[str]) -> List[DetectedApp]:
 
     detected_apps = []
 
-    # device_ip is interpolated into a shell command below, so reject anything
-    # outside host/IP/port characters to prevent command injection if this path
-    # is ever wired to user input. (Full shell=True removal is a follow-up.)
+    # Defense-in-depth: keep device_ip to host/IP/port characters. The adb calls
+    # below use argv lists (no shell), so device_ip is a single token regardless.
     if device_ip and not set(device_ip) <= set(
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.:-_"
     ):
         device_ip = None
 
     try:
-        # List running packages
+        # Connect first (if given), then list third-party packages. No shell.
         if device_ip:
-            cmd = f"adb connect {device_ip} && adb shell pm list packages -3"
-        else:
-            cmd = "adb shell pm list packages -3"  # Third-party apps only
-
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+            subprocess.run(["adb", "connect", device_ip], capture_output=True, text=True, timeout=10)
+        result = subprocess.run(
+            ["adb", "shell", "pm", "list", "packages", "-3"],
+            capture_output=True, text=True, timeout=30,
+        )
 
         if result.returncode == 0:
             packages = [line.replace('package:', '').strip() for line in result.stdout.split('\n') if line.strip()]
@@ -685,18 +684,17 @@ async def _get_adb_app_details(package: str) -> dict:
     """Get detailed app information via ADB."""
 
     try:
-        # Check if app is running
-        running_cmd = f"adb shell ps | grep {package}"
-        running_result = subprocess.run(running_cmd, shell=True, capture_output=True, text=True, timeout=10)
-        is_running = running_result.returncode == 0 and package in running_result.stdout
+        # Check if app is running (argv, no shell; grep in Python so a crafted
+        # package name from the device can't inject a command).
+        ps = subprocess.run(["adb", "shell", "ps"], capture_output=True, text=True, timeout=10)
+        is_running = ps.returncode == 0 and package in ps.stdout
 
         # Get app name
-        name_cmd = f"adb shell pm dump {package} | grep 'applicationLabel'"
-        name_result = subprocess.run(name_cmd, shell=True, capture_output=True, text=True, timeout=10)
+        dump = subprocess.run(["adb", "shell", "pm", "dump", package], capture_output=True, text=True, timeout=10)
         app_name = package.split('.')[-1]  # fallback
 
-        if name_result.returncode == 0 and 'applicationLabel=' in name_result.stdout:
-            app_name = name_result.stdout.split('applicationLabel=')[-1].split('\n')[0].strip()
+        if dump.returncode == 0 and 'applicationLabel=' in dump.stdout:
+            app_name = dump.stdout.split('applicationLabel=')[-1].split('\n')[0].strip()
 
         return {
             'name': app_name,

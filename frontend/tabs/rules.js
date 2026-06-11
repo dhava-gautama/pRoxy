@@ -1080,11 +1080,11 @@ window.RulesTab = {
                   <p class="text-xs text-gray-400">${esc(collection.description)}</p>
                   <div class="flex gap-2 mt-2">
                     ${collection.tags.map(tag => `
-                      <span class="text-xs bg-gray-700 text-gray-300 px-1 py-0.5 rounded">#${tag}</span>
+                      <span class="text-xs bg-gray-700 text-gray-300 px-1 py-0.5 rounded">#${esc(tag)}</span>
                     `).join('')}
                   </div>
                   <div class="text-xs text-gray-500 mt-1">
-                    Author: ${collection.author || 'Unknown'} | Version: ${collection.version}
+                    Author: ${esc(collection.author || 'Unknown')} | Version: ${esc(collection.version)}
                   </div>
                 </div>
                 <div class="flex gap-1">

@@ -167,6 +167,7 @@ class MapRule(BaseModel):
                 re.compile(self.match_pattern)
             except re.error as e:
                 raise ValueError(f"Invalid regex pattern: {e}")
+            _reject_redos(self.match_pattern)  # same ReDoS screen as ReplaceRule
         return self
 
     @field_validator('rule_type')
@@ -272,6 +273,41 @@ class ProxySettings(BaseModel):
     save_large_content: bool = True             # Save large content to disk instead of memory
     content_storage_dir: str = "./flow_content" # Directory for large content storage
     enable_smart_streaming: bool = True         # Enable intelligent streaming decisions
+
+    @field_validator('content_storage_dir')
+    @classmethod
+    def validate_content_storage_dir(cls, v: str) -> str:
+        """Keep large-content writes inside the project — the settings PATCH is a
+        control surface, and this path is fed to Path(...).mkdir()/write."""
+        if not v:
+            return v
+        decoded = unquote(v)
+        if ".." in decoded or decoded.startswith("/") or decoded.startswith("~"):
+            raise ValueError("content_storage_dir must be a relative path within the project")
+        try:
+            if not Path(v).resolve().is_relative_to(Path.cwd().resolve()):
+                raise ValueError("content_storage_dir must be within the working directory")
+        except OSError as e:
+            raise ValueError(f"Invalid content_storage_dir: {e}")
+        return v
+
+    @field_validator('custom_scripts')
+    @classmethod
+    def validate_custom_scripts(cls, v: list[str]) -> list[str]:
+        """Only load addon scripts from inside the project — these paths are handed
+        to mitmproxy as -s scripts (arbitrary code execution if unconstrained)."""
+        for raw in v:
+            decoded = unquote(raw)
+            if ".." in decoded or decoded.startswith("/") or decoded.startswith("~"):
+                raise ValueError(f"custom_scripts path must be relative within the project: {raw}")
+            if not raw.endswith(".py"):
+                raise ValueError(f"custom_scripts entries must be .py files: {raw}")
+            try:
+                if not Path(raw).resolve().is_relative_to(Path.cwd().resolve()):
+                    raise ValueError(f"custom_scripts path must be within the working directory: {raw}")
+            except OSError as e:
+                raise ValueError(f"Invalid custom_scripts path: {e}")
+        return v
 
     # Protocol and debugging enhancements
     capture_trailers: bool = True               # Capture HTTP trailers

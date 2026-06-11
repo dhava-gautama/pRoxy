@@ -345,14 +345,16 @@ class TestAppDiscovery:
     def test_discovery_with_adb_success(self, test_client: TestClient):
         """ADB success branch: package list + details, fully mocked subprocess."""
         def fake_run(cmd, *args, **kwargs):
+            # ssl.py now calls adb via argv lists (no shell); join for matching.
+            cmd_str = " ".join(cmd) if isinstance(cmd, (list, tuple)) else cmd
             m = MagicMock()
             m.returncode = 0
-            if "pm list packages" in cmd:
+            if "pm list packages" in cmd_str:
                 # One third-party app + one system app (filtered out).
                 m.stdout = "package:com.example.coolapp\npackage:com.android.systemui\n"
-            elif "ps |" in cmd:
+            elif "shell ps" in cmd_str:
                 m.stdout = "u0_a1 1234 com.example.coolapp"
-            elif "pm dump" in cmd:
+            elif "pm dump" in cmd_str:
                 m.stdout = "applicationLabel=CoolApp\n"
             else:
                 m.stdout = ""

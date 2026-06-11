@@ -233,7 +233,7 @@ window.OffensiveTab = {
             <div class="text-xs font-bold text-white mb-1">${esc(ep.host)} <span class="text-indigo-400">${esc(ep.path)}</span></div>
             <div class="flex gap-1 mb-1">
               ${Object.entries(ep.methods).map(([m, info]) => `
-                <span class="text-xs px-2 py-0.5 rounded ${this._methodColor(m)}">${m} <span class="text-gray-400">(${info.count}x)</span></span>
+                <span class="text-xs px-2 py-0.5 rounded ${this._methodColor(m)}">${esc(m)} <span class="text-gray-400">(${info.count}x)</span></span>
               `).join('')}
             </div>
             ${Object.entries(ep.methods).map(([m, info]) => `
@@ -881,7 +881,7 @@ window.OffensiveTab = {
       });
       const statusDist = data.status_distribution || data.summary?.status_codes || {};
       el.innerHTML = `
-        <div class="text-xs text-gray-400 mb-2">Method: ${data.method} | Concurrency: ${data.concurrency}</div>
+        <div class="text-xs text-gray-400 mb-2">Method: ${esc(data.method)} | Concurrency: ${data.concurrency}</div>
         ${data.issues?.length ? data.issues.map(i => `<div class="text-xs bg-yellow-900/30 text-yellow-300 px-2 py-1 rounded mb-1">${esc(i)}</div>`).join('') : '<div class="text-xs text-green-400 mb-2">No obvious race condition indicators</div>'}
         <div class="flex gap-3 mb-3 text-xs">
           ${Object.entries(statusDist).map(([s,c]) => `<span class="${this._statusColor(parseInt(s))} font-bold">${s}: ${c}</span>`).join('')}
