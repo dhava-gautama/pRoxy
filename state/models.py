@@ -122,7 +122,7 @@ def _reject_redos(pattern: str) -> None:
 
 class ReplaceRule(BaseModel):
     pattern: str = Field(min_length=1, max_length=10_000)  # search string or regex
-    replacement: str
+    replacement: str = Field(max_length=100_000)           # bound growth via settings
     phase: str = "response"  # "request" or "response"
     is_regex: bool = False
     enabled: bool = True

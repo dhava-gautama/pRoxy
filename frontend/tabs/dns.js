@@ -135,6 +135,7 @@ window.DNSTab = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch)
       });
+      if (!resp.ok) { Toast.show('Failed to update DNS', 'error'); return; }
       this.dns = await resp.json();
     } catch (e) {
       Toast.show('Failed to update DNS', 'error');

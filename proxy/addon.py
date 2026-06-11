@@ -1206,17 +1206,29 @@ class ProxyAddon:
         return stream_info
 
     def _decompress_grpc_content(self, content: bytes, compression_type: str) -> bytes:
-        """Decompress gRPC message content."""
+        """Decompress gRPC message content, size-capped to resist decompression bombs."""
+        import zlib
+        cap = 64 * 1024 * 1024  # bomb guard (gRPC decode is opt-in but attacker-fed)
+        ct = compression_type.lower()
         try:
-            if compression_type.lower() == "gzip":
-                import gzip
-                return gzip.decompress(content)
-            elif compression_type.lower() == "deflate":
-                import zlib
-                return zlib.decompress(content)
+            if ct == "gzip":
+                wbits = 16 + zlib.MAX_WBITS  # gzip header
+            elif ct == "deflate":
+                wbits = zlib.MAX_WBITS
             else:
                 logger.debug("Unknown gRPC compression type: %s", compression_type)
                 return content
+            d = zlib.decompressobj(wbits)
+            out = bytearray()
+            data = content
+            while True:
+                chunk = d.decompress(data, cap + 1 - len(out))
+                out += chunk
+                if len(out) > cap:
+                    raise ValueError("gRPC decompressed output exceeds cap")
+                data = d.unconsumed_tail
+                if not chunk and not data:
+                    return bytes(out)
         except Exception as e:
             logger.debug("gRPC decompression error: %s", e)
             return content
@@ -3024,11 +3036,19 @@ class ProxyAddon:
             http_version=self._detect_http_version(flow),
         )
 
-        # Detect and analyze modern protocols
-        self._analyze_modern_protocols(flow, rec)
+        # Detect and analyze modern protocols. These parse attacker-controlled
+        # bytes and run on the proxy event loop; each inner parser guards itself,
+        # but backstop here too so a parser failure never breaks the flow.
+        try:
+            self._analyze_modern_protocols(flow, rec)
+        except Exception as e:
+            logger.debug("modern-protocol analysis failed: %s", e)
 
         # Enhanced Flow API analysis
-        self._analyze_enhanced_flow_info(flow, rec)
+        try:
+            self._analyze_enhanced_flow_info(flow, rec)
+        except Exception as e:
+            logger.debug("enhanced flow analysis failed: %s", e)
 
         # Add trailers if available
         settings = self.state.get_settings()
