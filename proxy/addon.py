@@ -1810,7 +1810,7 @@ class ProxyAddon:
 
             if total_flows > 0:
                 durations = []
-                for flow in list(self.state._flows.values())[-1000:]:  # Last 1000 flows
+                for flow in self.state.snapshot_flows()[-1000:]:  # Last 1000 flows
                     if flow.duration_ms > 0:
                         durations.append(flow.duration_ms)
                     if flow.has_error or flow.status_code >= 400:
@@ -1828,7 +1828,7 @@ class ProxyAddon:
                 requests_per_second=requests_per_second,
                 avg_request_duration_ms=avg_duration,
                 total_requests=total_flows,
-                active_flows=len([f for f in self.state._flows.values() if not f.completed]),
+                active_flows=len([f for f in self.state.snapshot_flows() if not f.completed]),
                 error_rate=error_rate,
                 cache_hit_rate=0,  # Would need separate tracking
                 memory_cache_size_mb=cache_size,
@@ -1934,10 +1934,8 @@ class ProxyAddon:
         try:
             # Clean up old flow records
             if len(self.state._flows) > 5000:
-                # Keep only recent 3000 flows
-                flows_to_keep = dict(list(self.state._flows.items())[-3000:])
-                self.state._flows.clear()
-                self.state._flows.update(flows_to_keep)
+                # Keep only recent 3000 flows (atomically, under the flows lock)
+                self.state.trim_flows(3000)
                 logger.info("Emergency cleanup: reduced flow history")
 
             # Clean up DNS cache
@@ -3283,15 +3281,19 @@ class ProxyAddon:
             elif rule.action == "remove":
                 flow.request.headers.pop(rule.name, None)
 
-        # Auto-replace on request body
+        # Auto-replace on request body. Use mitmproxy's charset-aware text
+        # accessor (honors the declared charset; raises on non-text bodies, which
+        # the except then skips) instead of a lossy utf-8 errors="replace" round
+        # trip that corrupted any non-utf-8 body whenever a rule matched.
         if flow.request.content:
             ct = flow.request.headers.get("content-type", "").lower()
             if any(t in ct for t in ("text", "json", "xml", "javascript", "html", "form")):
                 try:
-                    original = flow.request.content.decode("utf-8", errors="replace")
-                    replaced = self._apply_replace_rules(original, "request")
-                    if replaced != original:
-                        flow.request.set_content(replaced.encode("utf-8"))
+                    original = flow.request.text
+                    if original is not None:
+                        replaced = self._apply_replace_rules(original, "request")
+                        if replaced != original:
+                            flow.request.set_text(replaced)
                 except Exception:
                     pass
 
@@ -3689,15 +3691,17 @@ class ProxyAddon:
             elif rule.action == "remove":
                 flow.response.headers.pop(rule.name, None)
 
-        # Auto-replace on response body
+        # Auto-replace on response body. Charset-aware (see request side above) so
+        # a non-utf-8 page (e.g. windows-1252) is no longer mangled when a rule hits.
         if flow.response.content:
             ct = flow.response.headers.get("content-type", "").lower()
             if any(t in ct for t in ("text", "json", "xml", "javascript", "html", "css", "form")):
                 try:
-                    original = flow.response.content.decode("utf-8", errors="replace")
-                    replaced = self._apply_replace_rules(original, "response")
-                    if replaced != original:
-                        flow.response.set_content(replaced.encode("utf-8"))
+                    original = flow.response.text
+                    if original is not None:
+                        replaced = self._apply_replace_rules(original, "response")
+                        if replaced != original:
+                            flow.response.set_text(replaced)
                 except Exception:
                     pass
 
@@ -4112,7 +4116,7 @@ class ProxyAddon:
         graphql_flows = 0
         sse_flows = 0
 
-        for flow_record in self.state._flows.values():
+        for flow_record in self.state.snapshot_flows():
             # Protocol distribution
             protocol = flow_record.http_version or "HTTP/1.1"
             protocol_counts[protocol] = protocol_counts.get(protocol, 0) + 1
@@ -4254,7 +4258,7 @@ class ProxyAddon:
 
             # Count flows with server connection reuse indicators
             reused_connections = 0
-            for flow_record in self.state._flows.values():
+            for flow_record in self.state.snapshot_flows():
                 # This is a simplified calculation - in practice you'd need more detailed tracking
                 if (flow_record.server_connection and
                     flow_record.server_connection.timestamp_start and
@@ -4318,7 +4322,7 @@ class ProxyAddon:
         total_durations = []
         intercept_durations = []
 
-        for flow_record in self.state._flows.values():
+        for flow_record in self.state.snapshot_flows():
             # Count different flow states
             if flow_record.lifecycle_info:
                 lifecycle = flow_record.lifecycle_info
@@ -4397,7 +4401,7 @@ class ProxyAddon:
         forward_secrecy_count = 0
         sni_usage_count = 0
 
-        for flow_record in self.state._flows.values():
+        for flow_record in self.state.snapshot_flows():
             if flow_record.tls_analysis:
                 tls_analysis = flow_record.tls_analysis
                 tls_flows += 1

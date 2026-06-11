@@ -144,6 +144,8 @@ async def import_har(file: UploadFile = File(...)):
             state.store_flow(flow)
             imported += 1
         return {"imported": imported}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(400, f"Invalid HAR file: {e}")
 

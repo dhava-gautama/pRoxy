@@ -7,6 +7,7 @@ import gzip
 import json
 import re
 import time
+import zlib
 from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, HTTPException
@@ -460,11 +461,29 @@ def _analyze_performance(content: str, content_type: str) -> List[str]:
     return hints[:5]  # Limit to 5 hints
 
 
+_MAX_DECOMPRESS_BYTES = 25 * 1024 * 1024  # cap gunzip output to thwart gzip-bomb DoS
+
+
+def _gunzip_bounded(raw: bytes, limit: int = _MAX_DECOMPRESS_BYTES) -> bytes:
+    """Decompress gzip data, aborting if the output would exceed `limit` bytes."""
+    d = zlib.decompressobj(16 + zlib.MAX_WBITS)  # 16 => expect a gzip header
+    out = bytearray()
+    data = raw
+    while True:
+        chunk = d.decompress(data, limit + 1 - len(out))
+        out += chunk
+        if len(out) > limit:
+            raise ValueError("gzip output exceeds size limit")
+        data = d.unconsumed_tail
+        if not chunk and not data:
+            return bytes(out)
+
+
 def _apply_processor(content: str, processor: str, config: dict) -> str:
     """Apply a single processor to content."""
     if processor == "decode_gzip":
         try:
-            return gzip.decompress(base64.b64decode(content)).decode('utf-8')
+            return _gunzip_bounded(base64.b64decode(content)).decode('utf-8')
         except Exception:
             return content
 

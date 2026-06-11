@@ -460,17 +460,21 @@ async def build_priv_matrix(data: dict):
 
     matrix = []
     for ep in endpoints[:50]:
+        method = ep.get("method", "GET")
+        url = ep.get("url", "")
+        if not url:
+            continue  # caller-supplied endpoints may omit url; skip rather than KeyError
         row = {
-            "endpoint": ep.get("label", f"{ep['method']} {ep['url']}"),
-            "method": ep["method"],
-            "url": ep["url"],
+            "endpoint": ep.get("label") or f"{method} {url}",
+            "method": method,
+            "url": url,
             "roles": {},
         }
 
         for role in roles:
             merged = dict(ep.get("headers", {}))
             merged.update(role.get("headers", {}))
-            resp = await _fire(ep["method"], ep["url"], merged, ep.get("body", ""))
+            resp = await _fire(method, url, merged, ep.get("body", ""))
             status = resp.get("status_code", 0)
             row["roles"][role["name"]] = {
                 "status_code": status,

@@ -580,6 +580,8 @@ async def test_mass_assignment(data: dict):
             original = json.loads(body) if body else {}
         except json.JSONDecodeError:
             original = {}
+        if not isinstance(original, dict):
+            original = {}  # a top-level JSON list/scalar would crash dict(original) below
 
         # Test each field individually
         test_fields = list(custom_fields.items()) if custom_fields else MASS_ASSIGN_FIELDS

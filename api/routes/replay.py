@@ -232,7 +232,7 @@ async def fuzz_request(data: dict):
         body_template = data.get("body", "")
         iterations = min(data.get("iterations", 10), 1000)
         variables = data.get("variables", {})
-        delay_ms = data.get("delay_ms", 0)
+        delay_ms = min(max(data.get("delay_ms", 0), 0), 10_000)  # cap per-iteration delay
 
         results = []
         for i in range(iterations):

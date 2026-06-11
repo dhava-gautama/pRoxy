@@ -257,6 +257,26 @@ class ProxyState:
                 result.append(d)
         return result
 
+    def snapshot_flows(self) -> list[FlowRecord]:
+        """Return a point-in-time list of stored records, taken under the lock.
+
+        Threads other than the mitmproxy loop (analytics endpoints, background
+        monitors) must iterate flows through this — touching `_flows` directly
+        races store_flow and raises "dict changed size during iteration". The
+        returned refs are live; use read-only.
+        """
+        with self._flows_lock:
+            return list(self._flows.values())
+
+    def trim_flows(self, keep_last: int) -> int:
+        """Drop oldest flows so at most `keep_last` remain. Returns the count dropped."""
+        with self._flows_lock:
+            dropped = 0
+            while len(self._flows) > keep_last:
+                self._flows.popitem(last=False)
+                dropped += 1
+            return dropped
+
     def delete_flow(self, flow_id: str) -> bool:
         with self._flows_lock:
             return self._flows.pop(flow_id, None) is not None

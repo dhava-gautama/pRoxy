@@ -12,7 +12,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from api.auth import get_current_user, AUTH_DISABLED
 from state.shared import ProxyState
@@ -745,6 +745,9 @@ async def import_rules(
     except HTTPException:
         # Preserve client-error responses (e.g. missing 'rules' section) raised above.
         raise
+    except ValidationError as e:
+        # Malformed rule shapes are a client error, not a server fault.
+        raise HTTPException(422, f"Invalid rules data: {e}")
     except Exception as e:
         raise HTTPException(500, f"Import failed: {e}")
 
