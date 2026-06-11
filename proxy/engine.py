@@ -43,51 +43,58 @@ def collect_custom_scripts(settings) -> list[str]:
     return paths
 
 # ── SOCKS5 upstream support ────────────────────────────────────
-# mitmproxy doesn't natively chain through SOCKS5 upstream proxies.
-# We monkeypatch socket.create_connection to route all outbound TCP
-# through the SOCKS5 proxy when configured.
+# mitmproxy doesn't natively chain through SOCKS5 upstream proxies. mitmproxy
+# 12.x opens every upstream TCP connection via asyncio.open_connection
+# (mitmproxy/proxy/server.py), so we wrap that function: when a SOCKS5 upstream
+# is configured we dial the destination through the SOCKS5 proxy (PySocks) and
+# hand the connected socket to asyncio. SOCKS5 resolves the destination host at
+# the proxy, so DNS does not leak. NOTE: a plain socket.create_connection patch
+# does NOT work — mitmproxy never calls it.
 #
 # LIMITATION: This patch is PROCESS-GLOBAL and is never torn down. It is only
 # installed when an upstream socks5:// proxy is configured (regular mode only),
-# and the patched function is a no-op passthrough whenever `_socks_proxy` is
-# None — so the working regular/wireguard paths are unaffected unless a user
-# explicitly configures a SOCKS5 upstream. In dual-instance mode this means a
-# SOCKS5 upstream configured for one instance routes outbound TCP for the whole
-# process (both instances) for the remainder of its lifetime; there is no
-# per-instance teardown. Proper per-instance routing would require threading the
-# proxy through mitmproxy's connection layer, which is out of scope here.
+# and is a no-op passthrough whenever `_socks_proxy` is None — so the working
+# regular/wireguard paths are unaffected unless a user explicitly configures a
+# SOCKS5 upstream. In dual-instance mode a SOCKS5 upstream configured for one
+# instance routes outbound TCP for the whole process for the rest of its
+# lifetime; there is no per-instance teardown.
 
 _socks_proxy: tuple[str, int] | None = None
 _socks_installed: bool = False
-_original_create_connection = socket.create_connection
+_orig_open_connection = asyncio.open_connection
 
 
-def _socks_create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT,
-                             source_address=None, **kwargs):
-    """Replacement for socket.create_connection that routes through SOCKS5."""
-    if _socks_proxy is not None:
-        import socks
-        host, port = address
-        # Don't proxy connections to localhost (dashboard, etc.)
-        if host not in ("127.0.0.1", "localhost", "::1"):
+async def _socks_open_connection(host=None, port=None, **kwds):
+    """asyncio.open_connection replacement that tunnels non-local TCP via SOCKS5."""
+    proxy = _socks_proxy
+    if (
+        proxy is not None
+        and kwds.get("sock") is None
+        and host not in (None, "127.0.0.1", "localhost", "::1")
+    ):
+        import socks  # PySocks
+
+        def _dial():
             s = socks.socksocket()
-            s.set_proxy(socks.SOCKS5, _socks_proxy[0], _socks_proxy[1])
-            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
-                s.settimeout(timeout)
-            if source_address:
-                s.bind(source_address)
-            s.connect((host, port))
+            s.set_proxy(socks.SOCKS5, proxy[0], proxy[1])
+            s.settimeout(30)
+            s.connect((host, port))  # SOCKS5 resolves `host` at the proxy (no DNS leak)
+            s.setblocking(False)
             return s
-    return _original_create_connection(address, timeout=timeout,
-                                       source_address=source_address, **kwargs)
+
+        loop = asyncio.get_running_loop()
+        sock = await loop.run_in_executor(None, _dial)
+        kwds.pop("local_addr", None)  # meaningless for a pre-connected tunnel socket
+        return await _orig_open_connection(sock=sock, **kwds)
+    return await _orig_open_connection(host, port, **kwds)
 
 
 def _enable_socks5_upstream(proxy_url: str) -> None:
-    """Parse socks5://host:port and monkeypatch socket.
+    """Parse socks5://host:port and route upstream TCP through it.
 
-    The monkeypatch is installed at most once per process (guarded by
-    _socks_installed); subsequent calls only update the target. See the module
-    header for the global-state limitation.
+    Patches asyncio.open_connection (mitmproxy's actual upstream dialer) at most
+    once per process (guarded by _socks_installed); subsequent calls only update
+    the target. See the module header for the process-global limitation.
     """
     global _socks_proxy, _socks_installed
     parsed = urlparse(proxy_url)
@@ -95,7 +102,7 @@ def _enable_socks5_upstream(proxy_url: str) -> None:
     port = parsed.port or 1080
     _socks_proxy = (host, port)
     if not _socks_installed:
-        socket.create_connection = _socks_create_connection
+        asyncio.open_connection = _socks_open_connection
         _socks_installed = True
     logger.info("SOCKS5 upstream: %s:%d", host, port)
 

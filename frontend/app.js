@@ -12,11 +12,19 @@
   function switchTab(tab) {
     if (currentTab === 'intercept') InterceptTab.stop();
     currentTab = tab;
-    tabBar.querySelectorAll('button').forEach(btn => {
-      btn.className = btn.dataset.tab === tab
-        ? 'px-3 py-2 text-sm tab-active'
-        : 'px-3 py-2 text-sm tab-inactive';
+    const SECONDARY = ['advanced','offensive','issues','authz','openapi','wireguard','import','sessions','scripts'];
+    // Toggle state classes only (don't rewrite className — dropdown items have extra classes).
+    tabBar.querySelectorAll('button[data-tab]').forEach(btn => {
+      const active = btn.dataset.tab === tab;
+      btn.classList.toggle('tab-active', active);
+      btn.classList.toggle('tab-inactive', !active);
     });
+    const moreBtn = document.getElementById('more-btn');
+    if (moreBtn) {
+      moreBtn.classList.toggle('tab-active', SECONDARY.includes(tab));
+      moreBtn.classList.toggle('tab-inactive', !SECONDARY.includes(tab));
+    }
+    document.getElementById('more-menu')?.classList.add('hidden');
     switch (tab) {
       case 'traffic':
         content.innerHTML = TrafficTab.render();
@@ -96,6 +104,31 @@
     const tab = e.target.dataset?.tab;
     if (tab) switchTab(tab);
   });
+
+  // "More ▾" overflow dropdown
+  const moreBtn = document.getElementById('more-btn');
+  const moreMenu = document.getElementById('more-menu');
+  if (moreBtn && moreMenu) {
+    moreBtn.addEventListener('click', e => { e.stopPropagation(); moreMenu.classList.toggle('hidden'); });
+    document.addEventListener('click', e => {
+      if (!moreMenu.classList.contains('hidden') && e.target !== moreBtn) moreMenu.classList.add('hidden');
+    });
+  }
+
+  // Restart the proxy from the dashboard (reloads addon scripts / settings / code)
+  window.restartProxy = async function () {
+    if (!confirm('Restart the proxy?\n\nUnsaved captured traffic will be cleared (save a Session first if needed). The dashboard will reconnect automatically.')) return;
+    Toast.show('Restarting pRoxy…', 'info');
+    try { await authFetch('/api/system/restart', { method: 'POST' }); } catch (e) {}
+    const started = Date.now();
+    const timer = setInterval(async () => {
+      try {
+        const r = await fetch('/', { cache: 'no-store' });
+        if (r.ok) { clearInterval(timer); Toast.show('Reconnected', 'success'); setTimeout(() => location.reload(), 500); return; }
+      } catch (e) { /* still down */ }
+      if (Date.now() - started > 45000) { clearInterval(timer); Toast.show('Still restarting — reload manually if needed', 'error'); }
+    }, 1500);
+  };
 
   // WebSocket connection
   function connectWS() {

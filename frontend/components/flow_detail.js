@@ -127,7 +127,7 @@ window.FlowDetail = {
     return `
       <div class="p-4 space-y-4">
         <div class="flex items-center gap-2 flex-wrap">
-          <span class="font-bold text-white">${flow.method}</span>
+          <span class="font-bold text-white">${esc(flow.method)}</span>
           ${FlowRow.statusBadge(flow.status_code, flow.flow_type)}
           <span class="text-gray-400 break-all">${esc(flow.url)}</span>
           <button onclick="TrafficTab.sendToReplay('${flow.id}')" class="ml-auto text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded" title="Ctrl+R">Replay</button>
@@ -542,7 +542,7 @@ window.FlowDetail = {
         <div class="border-l-2 border-gray-600 pl-3">
           <div class="flex items-center gap-2">
             <span class="text-yellow-400 font-mono text-xs bg-gray-800 px-1 rounded">${fieldNumber}</span>
-            <span class="text-blue-400 text-xs">${displayName}</span>
+            <span class="text-blue-400 text-xs">${esc(displayName)}</span>
             <span class="text-gray-500 text-xs">(${fieldType})</span>
           </div>
           <div class="mt-1 ml-2">
@@ -574,13 +574,13 @@ window.FlowDetail = {
         return `<span class="text-blue-400">${value}</span>`;
 
       case 'bytes':
-        return `<span class="text-gray-400 font-mono">${value}</span>`;
+        return `<span class="text-gray-400 font-mono">${esc(String(value))}</span>`;
 
       case 'message':
         if (typeof value === 'object') {
           return this._renderEnhancedProtobuf(value);
         }
-        return `<span class="text-gray-300">${JSON.stringify(value)}</span>`;
+        return `<span class="text-gray-300">${esc(JSON.stringify(value))}</span>`;
 
       default:
         if (typeof value === 'string') {
@@ -590,7 +590,7 @@ window.FlowDetail = {
         } else if (typeof value === 'boolean') {
           return `<span class="text-${value ? 'green' : 'red'}-400">${value}</span>`;
         } else {
-          return `<span class="text-gray-300">${JSON.stringify(value)}</span>`;
+          return `<span class="text-gray-300">${esc(JSON.stringify(value))}</span>`;
         }
     }
   },

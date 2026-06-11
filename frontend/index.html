@@ -86,26 +86,32 @@
       <span class="text-lg font-bold text-white tracking-tight">pRoxy</span>
       <span class="text-xs text-gray-500">MITM Dashboard</span>
     </div>
-    <div class="flex gap-1" id="tab-bar">
+    <div class="flex gap-1 items-center" id="tab-bar">
       <button class="px-3 py-2 text-sm tab-active" data-tab="traffic">Traffic</button>
       <button class="px-3 py-2 text-sm tab-inactive" data-tab="replay">Replay</button>
       <button class="px-3 py-2 text-sm tab-inactive" data-tab="rules">Rules</button>
-      <button class="px-3 py-2 text-sm tab-inactive" data-tab="dns">DNS</button>
       <button class="px-3 py-2 text-sm tab-inactive" data-tab="intercept">Intercept</button>
+      <button class="px-3 py-2 text-sm tab-inactive" data-tab="dns">DNS</button>
       <button class="px-3 py-2 text-sm tab-inactive" data-tab="analytics">Analytics</button>
       <button class="px-3 py-2 text-sm tab-inactive" data-tab="cert">Cert</button>
-      <button class="px-3 py-2 text-sm tab-inactive" data-tab="advanced">Advanced</button>
-      <button class="px-3 py-2 text-sm tab-inactive" data-tab="wireguard">WireGuard</button>
-      <button class="px-3 py-2 text-sm tab-inactive" data-tab="offensive">Offensive</button>
       <button class="px-3 py-2 text-sm tab-inactive" data-tab="tools">Tools</button>
-      <button class="px-3 py-2 text-sm tab-inactive" data-tab="openapi">OpenAPI</button>
-      <button class="px-3 py-2 text-sm tab-inactive" data-tab="issues">Issues</button>
-      <button class="px-3 py-2 text-sm tab-inactive" data-tab="authz">AuthZ</button>
-      <button class="px-3 py-2 text-sm tab-inactive" data-tab="import">Import</button>
-      <button class="px-3 py-2 text-sm tab-inactive" data-tab="sessions">Sessions</button>
-      <button class="px-3 py-2 text-sm tab-inactive" data-tab="scripts">Scripts</button>
+      <div class="relative">
+        <button id="more-btn" class="px-3 py-2 text-sm tab-inactive">More ▾</button>
+        <div id="more-menu" class="hidden absolute left-0 mt-1 min-w-[150px] bg-gray-900 border border-gray-700 rounded shadow-lg z-50 flex flex-col py-1">
+          <button class="px-3 py-2 text-sm text-left tab-inactive hover:bg-gray-800" data-tab="advanced">Advanced</button>
+          <button class="px-3 py-2 text-sm text-left tab-inactive hover:bg-gray-800" data-tab="offensive">Offensive</button>
+          <button class="px-3 py-2 text-sm text-left tab-inactive hover:bg-gray-800" data-tab="issues">Issues</button>
+          <button class="px-3 py-2 text-sm text-left tab-inactive hover:bg-gray-800" data-tab="authz">AuthZ</button>
+          <button class="px-3 py-2 text-sm text-left tab-inactive hover:bg-gray-800" data-tab="openapi">OpenAPI</button>
+          <button class="px-3 py-2 text-sm text-left tab-inactive hover:bg-gray-800" data-tab="wireguard">WireGuard</button>
+          <button class="px-3 py-2 text-sm text-left tab-inactive hover:bg-gray-800" data-tab="import">Import</button>
+          <button class="px-3 py-2 text-sm text-left tab-inactive hover:bg-gray-800" data-tab="sessions">Sessions</button>
+          <button class="px-3 py-2 text-sm text-left tab-inactive hover:bg-gray-800" data-tab="scripts">Scripts</button>
+        </div>
+      </div>
     </div>
     <div class="flex items-center gap-3">
+      <button onclick="restartProxy()" id="restart-btn" class="text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-gray-800" title="Restart the proxy (reloads scripts/settings)">⟳ Restart</button>
       <button onclick="ThemeManager.toggle()" id="theme-toggle" class="text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-gray-800" title="Toggle theme">
         <span id="theme-icon">🌙</span>
       </button>

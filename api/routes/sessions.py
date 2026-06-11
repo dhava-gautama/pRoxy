@@ -88,7 +88,12 @@ def load_session(req: LoadRequest):
     path = _path_for(req.name)
     if not path.exists():
         raise HTTPException(404, "Session not found")
-    data = json.loads(path.read_text())
+    try:
+        data = json.loads(path.read_text())
+    except (ValueError, OSError):
+        raise HTTPException(400, "Session file is corrupt or unreadable")
+    if not isinstance(data, list):
+        raise HTTPException(400, "Session file has an unexpected format")
     if req.clear:
         state.clear_flows()
     loaded = 0

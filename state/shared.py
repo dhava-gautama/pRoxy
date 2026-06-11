@@ -244,14 +244,17 @@ class ProxyState:
 
     def get_flows_lite(self, limit: int = 200, offset: int = 0) -> list[dict]:
         """Return flows without large body fields for faster list loading."""
+        # Serialize UNDER the lock: model_dump walks the record's mutable fields
+        # (grpc/sse/graphql lists, headers) which the mitmproxy thread mutates under
+        # _flows_lock, so dumping outside it can read a torn snapshot. Mirrors get_flows.
         with self._flows_lock:
             items = list(self._flows.values())
-        items.reverse()
-        result = []
-        for f in items[offset : offset + limit]:
-            d = f.model_dump(exclude={"request_body", "response_body", "ws_messages"})
-            d["response_size"] = f.response_size or len(f.response_body)
-            result.append(d)
+            items.reverse()
+            result = []
+            for f in items[offset : offset + limit]:
+                d = f.model_dump(exclude={"request_body", "response_body", "ws_messages"})
+                d["response_size"] = f.response_size or len(f.response_body)
+                result.append(d)
         return result
 
     def delete_flow(self, flow_id: str) -> bool:
